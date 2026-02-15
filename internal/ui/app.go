@@ -77,8 +77,9 @@ type Model struct {
 	settings    settings
 	showSettings bool
 	confirmQuit  bool
-	indexing     bool   // true while background index is running
-	indexStatus  string // status text for status bar
+	indexing        bool   // true while background index is running
+	indexStatus     string // status text for status bar
+	activeWatchName string // non-empty when viewing watchlist matches
 }
 
 func NewModel(db *store.Store) Model {
@@ -207,6 +208,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.watchlist.IsEditing() {
 			return m.handleWatchEditKey(msg)
+		}
+		if m.watchlist.IsConfirmingDelete() {
+			return m.handleWatchDeleteConfirm(msg)
 		}
 		return m.handleKey(msg)
 	}
@@ -371,6 +375,21 @@ func (m Model) handleWatchEditKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 }
 
+func (m Model) handleWatchDeleteConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y", "Y":
+		item := m.watchlist.Selected()
+		if item != nil && m.store != nil {
+			m.store.RemoveWatch(item.ID)
+			m.refreshWatchlist()
+		}
+		m.watchlist.ConfirmDelete()
+	default:
+		m.watchlist.CancelDelete()
+	}
+	return m, nil
+}
+
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c":
@@ -502,9 +521,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "d":
 		if m.focus == paneWatchlist {
 			item := m.watchlist.Selected()
-			if item != nil && m.store != nil {
-				m.store.RemoveWatch(item.ID)
-				m.refreshWatchlist()
+			if item != nil {
+				m.watchlist.AskDelete()
 			}
 		}
 
@@ -535,6 +553,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.doSelectProject()
 			m.focus = paneSessions
 		case paneWatchlist:
+			m.doSelectWatchlist()
+			m.focus = paneSessions
 		}
 	}
 
@@ -573,14 +593,51 @@ func (m *Model) doSelectProject() {
 	if err != nil {
 		return
 	}
+	m.activeWatchName = ""
 	m.allSessions = sessions
 	m.doFilterSessions()
 }
 
+func (m *Model) doSelectWatchlist() {
+	item := m.watchlist.Selected()
+	if item == nil || m.store == nil {
+		return
+	}
+
+	matches, err := m.store.MatchesForWatch(item.ID, 10000)
+	if err != nil || len(matches) == 0 {
+		m.activeWatchName = item.Name
+		m.allSessions = nil
+		m.doFilterSessions()
+		return
+	}
+
+	seen := make(map[string]bool)
+	var sessionIDs []string
+	for _, match := range matches {
+		if !seen[match.SessionID] {
+			seen[match.SessionID] = true
+			sessionIDs = append(sessionIDs, match.SessionID)
+		}
+	}
+
+	sessions, err := m.store.SessionsByIDs(sessionIDs)
+	if err != nil {
+		return
+	}
+
+	m.activeWatchName = item.Name
+	m.allSessions = sessions
+	m.doFilterSessions()
+	m.store.MarkWatchSeen(item.ID)
+	m.refreshWatchlist()
+}
+
 func (m *Model) doFilterSessions() {
-	proj := m.projects.Selected()
 	name := ""
-	if proj != nil {
+	if m.activeWatchName != "" {
+		name = "WATCH: " + m.activeWatchName
+	} else if proj := m.projects.Selected(); proj != nil {
 		name = proj.Name
 	}
 

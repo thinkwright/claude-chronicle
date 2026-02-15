@@ -18,15 +18,16 @@ const (
 )
 
 type WatchlistPane struct {
-	items     []store.WatchItem
-	cursor    int
-	width     int
-	height    int
-	visible   bool
-	editing   bool
-	editField watchEditField
-	nameInput textinput.Model
-	patInput  textinput.Model
+	items          []store.WatchItem
+	cursor         int
+	width          int
+	height         int
+	visible        bool
+	editing        bool
+	editField      watchEditField
+	nameInput      textinput.Model
+	patInput       textinput.Model
+	confirmDelete  bool
 }
 
 func NewWatchlistPane() WatchlistPane {
@@ -80,6 +81,22 @@ func (w *WatchlistPane) Show() {
 
 func (w *WatchlistPane) IsEditing() bool {
 	return w.editing
+}
+
+func (w *WatchlistPane) IsConfirmingDelete() bool {
+	return w.confirmDelete
+}
+
+func (w *WatchlistPane) AskDelete() {
+	w.confirmDelete = true
+}
+
+func (w *WatchlistPane) CancelDelete() {
+	w.confirmDelete = false
+}
+
+func (w *WatchlistPane) ConfirmDelete() {
+	w.confirmDelete = false
 }
 
 func (w *WatchlistPane) Up() {
@@ -182,7 +199,7 @@ func (w *WatchlistPane) View() string {
 		if w.editField == editName {
 			hint = "Tab → regex field  Esc → cancel"
 		} else {
-			hint = "Enter → save  Esc → cancel"
+			hint = "Enter → save  Esc → cancel  (?i) for case-insensitive"
 		}
 		if len(hint)+2 > innerW {
 			if w.editField == editName {
@@ -192,6 +209,17 @@ func (w *WatchlistPane) View() string {
 			}
 		}
 		lines = append(lines, DimStyle.Render("  "+hint))
+		return strings.Join(lines, "\n")
+	}
+
+	if w.confirmDelete {
+		item := w.Selected()
+		name := ""
+		if item != nil {
+			name = item.Name
+		}
+		lines = append(lines, lipgloss.NewStyle().Foreground(ColorRed).Render(
+			fmt.Sprintf("  Delete \"%s\"?  y/n", name)))
 		return strings.Join(lines, "\n")
 	}
 

@@ -38,7 +38,7 @@ func seedTestData(t *testing.T, s *Store) (string, []int64) {
 		t.Fatal(err)
 	}
 
-	if err := s.indexFile(path, "TestProject"); err != nil {
+	if _, err := s.indexFile(path, "TestProject"); err != nil {
 		t.Fatal(err)
 	}
 

@@ -260,6 +260,54 @@ func (s *Store) SessionsByProject(project string) ([]claude.SessionEntry, error)
 	return sessions, nil
 }
 
+// SessionsByIDs returns sessions matching any of the given session IDs.
+func (s *Store) SessionsByIDs(sessionIDs []string) ([]claude.SessionEntry, error) {
+	if len(sessionIDs) == 0 {
+		return nil, nil
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	placeholders := make([]string, len(sessionIDs))
+	args := make([]interface{}, len(sessionIDs))
+	for i, id := range sessionIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+
+	rows, err := s.db.Query(fmt.Sprintf(`
+		SELECT s.session_id, COALESCE(f.path, ''), s.first_prompt, s.message_count,
+			s.created_at, s.modified_at, s.git_branch, s.project
+		FROM sessions s
+		LEFT JOIN files f ON f.id = s.file_id
+		WHERE s.session_id IN (%s)
+		ORDER BY s.modified_at DESC
+	`, strings.Join(placeholders, ",")), args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var sessions []claude.SessionEntry
+	for rows.Next() {
+		var se claude.SessionEntry
+		var fullPath sql.NullString
+		if err := rows.Scan(
+			&se.SessionID, &fullPath, &se.FirstPrompt, &se.MessageCount,
+			&se.Created, &se.Modified, &se.GitBranch, &se.ProjectPath,
+		); err != nil {
+			continue
+		}
+		if fullPath.Valid {
+			se.FullPath = fullPath.String
+		}
+		sessions = append(sessions, se)
+	}
+
+	return sessions, nil
+}
+
 // MatchCount returns the number of FTS matches for a query (for result count display).
 func (s *Store) MatchCount(query string) int {
 	fs := Parse(query)

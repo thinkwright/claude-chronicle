@@ -60,6 +60,7 @@ func (s *Store) IndexAll(progress chan<- IndexProgress) error {
 
 	progress <- IndexProgress{Phase: "indexing", Total: len(files)}
 
+	var allMsgIDs []int64
 	for i, f := range files {
 		progress <- IndexProgress{
 			Phase:   "indexing",
@@ -68,10 +69,16 @@ func (s *Store) IndexAll(progress chan<- IndexProgress) error {
 			File:    filepath.Base(f.path),
 		}
 
-		if err := s.indexFile(f.path, f.project); err != nil {
-			// Log but continue — one bad file shouldn't stop everything
+		msgIDs, err := s.indexFile(f.path, f.project)
+		if err != nil {
 			continue
 		}
+		allMsgIDs = append(allMsgIDs, msgIDs...)
+	}
+
+	// Run watchlist matching on all newly indexed messages
+	if len(allMsgIDs) > 0 {
+		s.MatchNewMessages(allMsgIDs)
 	}
 
 	progress <- IndexProgress{Phase: "done", Current: len(files), Total: len(files)}
@@ -82,14 +89,15 @@ func (s *Store) IndexAll(progress chan<- IndexProgress) error {
 // Returns the number of new/updated files.
 func (s *Store) IndexChanged() (int, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	projects, err := claude.DiscoverProjects()
 	if err != nil {
+		s.mu.Unlock()
 		return 0, err
 	}
 
 	changed := 0
+	var newMsgIDs []int64
 
 	for _, proj := range projects {
 		entries, err := os.ReadDir(proj.DataDir)
@@ -120,20 +128,30 @@ func (s *Store) IndexChanged() (int, error) {
 				continue // unchanged
 			}
 
-			if err := s.indexFile(path, proj.Name); err != nil {
+			msgIDs, err := s.indexFile(path, proj.Name)
+			if err != nil {
 				continue
 			}
+			newMsgIDs = append(newMsgIDs, msgIDs...)
 			changed++
 		}
+	}
+
+	s.mu.Unlock()
+
+	// Run watchlist matching outside the write lock to avoid deadlock
+	if len(newMsgIDs) > 0 {
+		s.MatchNewMessages(newMsgIDs)
 	}
 
 	return changed, nil
 }
 
-func (s *Store) indexFile(path, project string) error {
+// indexFile re-indexes a single JSONL file, returning the IDs of all inserted messages.
+func (s *Store) indexFile(path, project string) ([]int64, error) {
 	info, err := os.Stat(path)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	sessionID := strings.TrimSuffix(filepath.Base(path), ".jsonl")
@@ -144,12 +162,12 @@ func (s *Store) indexFile(path, project string) error {
 	// Load messages using existing parser
 	messages, err := claude.LoadMessages(path)
 	if err != nil {
-		return fmt.Errorf("parse %s: %w", path, err)
+		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
 
 	tx, err := s.db.Begin()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer tx.Rollback()
 
@@ -169,7 +187,7 @@ func (s *Store) indexFile(path, project string) error {
 		path, project, sessionID, mtime, size, now,
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	fileID, _ := res.LastInsertId()
 
@@ -184,6 +202,7 @@ func (s *Store) indexFile(path, project string) error {
 		totalOut    int
 		toolCount   int
 		msgCount    int
+		msgIDs      []int64
 	)
 
 	msgStmt, err := tx.Prepare(`
@@ -191,7 +210,7 @@ func (s *Store) indexFile(path, project string) error {
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer msgStmt.Close()
 
@@ -208,12 +227,16 @@ func (s *Store) indexFile(path, project string) error {
 
 		tools := strings.Join(msg.ToolCalls, ", ")
 
-		_, err := msgStmt.Exec(
+		res, err := msgStmt.Exec(
 			sessionID, string(msg.Type), msg.Timestamp, msg.Model,
 			text, tools, msg.InputTokens, msg.OutputTokens,
 		)
 		if err != nil {
 			continue
+		}
+
+		if id, err := res.LastInsertId(); err == nil {
+			msgIDs = append(msgIDs, id)
 		}
 
 		// Aggregate session stats
@@ -252,10 +275,13 @@ func (s *Store) indexFile(path, project string) error {
 		createdAt, modifiedAt, msgCount, totalIn, totalOut, toolCount,
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return msgIDs, nil
 }
 
 // FileCount returns the number of indexed files.
