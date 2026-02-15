@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Documentation — Claude Chronicle (clog) | Terminal dashboard for Claude Code</title>
+    <meta name="description" content="Documentation for clog: installation, keybindings, search syntax, watchlist configuration, filter expressions, memory viewing, hooks introspection, and settings. Everything you need to navigate your Claude Code conversation history.">
+    <meta name="keywords" content="clog documentation, Claude Code history viewer, terminal dashboard docs, TUI keybindings, Claude Code search, conversation log viewer, JSONL browser">
+
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="Documentation — clog">
+    <meta property="og:description" content="Installation, keybindings, search, watchlists, filters, memory, hooks, and settings for clog.">
+    <meta property="og:site_name" content="thinkwright">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Documentation — clog">
+    <meta name="twitter:description" content="Installation, keybindings, search, watchlists, filters, memory, hooks, and settings for clog.">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #0a0a0f;
+            --bg-card: #12121a;
+            --border-subtle: rgba(255, 255, 255, 0.08);
+            --border-hover: rgba(255, 255, 255, 0.15);
+            --text-primary: #f0f0f5;
+            --text-secondary: #9898a8;
+            --text-muted: #5a5a6e;
+            --accent-blue: #3b82f6;
+            --accent-purple: #a78bfa;
+            --accent-green: #10b981;
+            --accent-yellow: #fbbf24;
+            --accent-orange: #f97316;
+            --accent-pink: #ec4899;
+            --accent-red: #ef4444;
+            --accent-cyan: #22d3ee;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            overflow-x: hidden;
+        }
+
+        /* ── Navigation ── */
+        .nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            padding: 20px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 100;
+            background: rgba(10, 10, 15, 0.8);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+
+        .nav-logo {
+            font-size: 20px;
+            font-weight: 700;
+            color: white;
+            text-decoration: none;
+            letter-spacing: -0.02em;
+            display: flex;
+            align-items: baseline;
+            gap: 0;
+        }
+
+        .nav-logo a { text-decoration: none; }
+
+        .nav-logo-muted {
+            font-weight: 400;
+            color: rgba(255, 255, 255, 0.4);
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 24px;
+            align-items: center;
+        }
+
+        .nav-link {
+            color: rgba(255, 255, 255, 0.7);
+            text-decoration: none;
+            font-size: 14px;
+            transition: color 0.2s;
+        }
+
+        .nav-link:hover { color: white; }
+
+        .nav-link-active {
+            color: white;
+            font-weight: 500;
+        }
+
+        /* ── Article container ── */
+        .article-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 100px 32px 80px;
+        }
+
+        /* ── Doc hero ── */
+        .doc-hero { margin-bottom: 48px; }
+
+        .doc-hero h1 {
+            font-size: 36px;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            line-height: 1.2;
+            margin-bottom: 12px;
+        }
+
+        .page-subtitle {
+            font-size: 17px;
+            line-height: 1.6;
+            color: var(--text-secondary);
+            max-width: 680px;
+        }
+
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            color: var(--text-muted);
+            text-decoration: none;
+            margin-bottom: 32px;
+            transition: color 0.2s;
+        }
+
+        .back-link:hover { color: var(--text-secondary); }
+
+        /* ── Sections ── */
+        .doc-section { margin-bottom: 56px; }
+
+        .doc-section-title {
+            font-size: 22px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border-subtle);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .section-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            height: 28px;
+            border-radius: 8px;
+            flex-shrink: 0;
+        }
+
+        .section-icon svg { width: 16px; height: 16px; }
+
+        .doc-sub-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin: 24px 0 12px;
+            color: var(--text-primary);
+        }
+
+        /* ── Text ── */
+        .doc-text {
+            font-size: 15px;
+            line-height: 1.7;
+            color: var(--text-secondary);
+            margin-bottom: 16px;
+        }
+
+        .doc-text strong { color: var(--text-primary); font-weight: 600; }
+
+        .doc-text code,
+        .doc-list code,
+        .callout code,
+        .key-table code {
+            font-family: 'JetBrains Mono', 'SF Mono', Monaco, monospace;
+            font-size: 13px;
+            background: rgba(255, 255, 255, 0.08);
+            padding: 2px 7px;
+            border-radius: 4px;
+            color: var(--accent-cyan);
+        }
+
+        /* ── Lists ── */
+        .doc-list {
+            list-style: none;
+            margin-bottom: 20px;
+        }
+
+        .doc-list li {
+            position: relative;
+            padding: 8px 0 8px 28px;
+            font-size: 14px;
+            line-height: 1.6;
+            color: var(--text-secondary);
+        }
+
+        .doc-list li::before {
+            content: '';
+            position: absolute;
+            left: 8px;
+            top: 16px;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--accent-cyan);
+        }
+
+        .doc-list li strong { color: var(--text-primary); }
+
+        /* ── Code blocks ── */
+        .code-block {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+
+        .code-block-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 16px;
+            border-bottom: 1px solid var(--border-subtle);
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .code-block-header svg { width: 14px; height: 14px; stroke: var(--text-muted); }
+
+        .code-block pre {
+            padding: 16px 20px;
+            font-family: 'JetBrains Mono', 'SF Mono', Monaco, monospace;
+            font-size: 13px;
+            line-height: 1.7;
+            overflow-x: auto;
+            color: var(--text-secondary);
+        }
+
+        .code-block .cmd { color: var(--text-primary); font-weight: 500; }
+        .code-block .flag { color: var(--accent-cyan); }
+        .code-block .val { color: var(--accent-green); }
+        .code-block .str { color: var(--accent-green); }
+        .code-block .comment { color: var(--text-muted); }
+        .code-block .kw { color: var(--accent-yellow); }
+
+        /* ── Keybinding table ── */
+        .key-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 24px;
+            font-size: 14px;
+        }
+
+        .key-table th {
+            text-align: left;
+            font-weight: 600;
+            color: var(--text-primary);
+            padding: 10px 12px 10px 0;
+            border-bottom: 1px solid var(--border-subtle);
+            white-space: nowrap;
+        }
+
+        .key-table td {
+            padding: 10px 12px 10px 0;
+            color: var(--text-secondary);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+            vertical-align: top;
+            line-height: 1.5;
+        }
+
+        .key-table tr:last-child td { border-bottom: none; }
+
+        .key-table kbd {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            background: rgba(255, 255, 255, 0.08);
+            padding: 2px 8px;
+            border-radius: 4px;
+            color: var(--accent-cyan);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        /* ── Callout ── */
+        .callout {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 16px 20px;
+            border-radius: 10px;
+            font-size: 14px;
+            line-height: 1.6;
+            color: var(--text-secondary);
+            margin-bottom: 20px;
+        }
+
+        .callout-info {
+            background: rgba(59, 130, 246, 0.08);
+            border: 1px solid rgba(59, 130, 246, 0.15);
+        }
+
+        .callout-icon {
+            width: 18px;
+            height: 18px;
+            flex-shrink: 0;
+            margin-top: 2px;
+            stroke: var(--accent-blue);
+        }
+
+        .callout strong { color: var(--text-primary); }
+
+        /* ── Divider ── */
+        .doc-divider {
+            border: none;
+            border-top: 1px solid var(--border-subtle);
+            margin: 48px 0;
+        }
+
+        /* ── Pillar cards ── */
+        .pillar-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+
+        .pillar-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            overflow: hidden;
+            transition: border-color 0.2s ease;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .pillar-card:hover { border-color: var(--border-hover); }
+
+        .pillar-card-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-subtle);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .pillar-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            flex-shrink: 0;
+        }
+
+        .pillar-icon svg { width: 16px; height: 16px; }
+        .pillar-header-text { flex: 1; }
+
+        .pillar-number {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--text-muted);
+            margin-bottom: 2px;
+        }
+
+        .pillar-title { font-size: 15px; font-weight: 700; }
+
+        .pillar-card-body { padding: 16px 20px; }
+        .pillar-card-body .doc-text { font-size: 14px; margin-bottom: 12px; }
+        .pillar-card-body .doc-list li { font-size: 13px; }
+
+        /* ── Footer ── */
+        .footer {
+            border-top: 1px solid var(--border-subtle);
+            padding: 48px 32px;
+            text-align: center;
+        }
+
+        .footer-inner {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .footer-links {
+            display: flex;
+            justify-content: center;
+            gap: 24px;
+            margin-bottom: 16px;
+        }
+
+        .footer-links a {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 13px;
+            transition: color 0.2s;
+        }
+
+        .footer-links a:hover { color: var(--text-secondary); }
+
+        .footer-brand {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        /* ── Responsive ── */
+        @media (max-width: 900px) {
+            .pillar-grid { grid-template-columns: 1fr; }
+        }
+
+        @media (max-width: 768px) {
+            .nav-links { gap: 12px; }
+        }
+
+        @media (max-width: 600px) {
+            .article-container { padding: 80px 20px 60px; }
+            .doc-hero h1 { font-size: 28px; }
+            .key-table { font-size: 12px; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ── Navigation ── -->
+    <nav class="nav">
+        <div class="nav-logo"><span class="nav-logo-muted">thinkwright /</span> <a href="./" style="color: white; text-decoration: none;">clog</a></div>
+        <div class="nav-links">
+            <a href="./#features" class="nav-link">Features</a>
+            <a href="docs.html" class="nav-link nav-link-active">Docs</a>
+            <a href="https://github.com/thinkwright/claude-chronicle" class="nav-link" target="_blank" rel="noopener">GitHub</a>
+        </div>
+    </nav>
+
+    <!-- ── Content ── -->
+    <div class="article-container">
+
+        <a href="./" class="back-link">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5"/><polyline points="12 19 5 12 12 5"/></svg>
+            Home
+        </a>
+
+        <!-- ── Hero ── -->
+        <div class="doc-hero">
+            <h1>Documentation</h1>
+            <p class="page-subtitle">Installation, navigation, search, watchlists, filters, and memory. Everything you need to get the most out of clog.</p>
+        </div>
+
+        <!-- ── Preamble ── -->
+        <div class="doc-section">
+            <h2 class="doc-section-title">
+                <span class="section-icon" style="background: rgba(167, 139, 250, 0.15);">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-purple)" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                </span>
+                What is Claude Chronicle?
+            </h2>
+
+            <p class="doc-text">Claude Code stores every conversation as a JSONL file under <code>~/.claude/projects/</code>. Each file contains the full message history — user prompts, assistant responses, tool calls, token counts, model information, and timestamps. After a few weeks of use, you'll have hundreds of these files across dozens of projects.</p>
+
+            <p class="doc-text"><strong>Claude Chronicle (clog)</strong> is a terminal dashboard that makes all of this navigable. It discovers your projects, indexes conversation content with SQLite FTS5 for full-text search, and presents everything in a keyboard-driven multi-pane layout. You can search across all your conversations, set up regex watchlists to monitor for patterns, filter the conversation log by message type or model, tail active sessions in real time, and inspect project memory and hooks configuration — all a hotkey away.</p>
+
+            <p class="doc-text">It's a single Go binary with zero external dependencies. No config files required — just run <code>clog</code> and it finds your data.</p>
+        </div>
+
+
+        <!-- ── 1. Installation ── -->
+        <div id="installation" class="doc-section" style="scroll-margin-top: 80px;">
+            <h2 class="doc-section-title">
+                <span class="section-icon" style="background: rgba(16, 185, 129, 0.15);">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-green)" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                </span>
+                Installation
+            </h2>
+
+            <div class="code-block">
+                <div class="code-block-header">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+                    Go Install
+                </div>
+<pre><span class="cmd">go install</span> github.com/thinkwright/claude-chronicle/cmd/clog@latest</pre>
+            </div>
+
+            <div class="code-block">
+                <div class="code-block-header">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+                    From Source
+                </div>
+<pre><span class="cmd">git clone</span> https://github.com/thinkwright/claude-chronicle
+<span class="cmd">cd</span> claude-chronicle
+<span class="cmd">go build</span> <span class="flag">-o</span> <span class="val">clog</span> ./cmd/clog
+<span class="cmd">./clog</span></pre>
+            </div>
+
+            <div class="callout callout-info">
+                <svg class="callout-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
+                </svg>
+                <span><strong>Requires Go 1.23+.</strong> clog uses <code>modernc.org/sqlite</code> (pure Go, no CGO) for the search index.</span>
+            </div>
+        </div>
+
+        <!-- ── 2. Quick Start ── -->
+        <div id="quick-start" class="doc-section" style="scroll-margin-top: 80px;">
+            <h2 class="doc-section-title">
+                <span class="section-icon" style="background: rgba(34, 211, 238, 0.15);">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-cyan)" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+                </span>
+                Quick Start
+            </h2>
+
+            <div class="code-block">
+                <div class="code-block-header">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+                    Launch
+                </div>
+<pre><span class="cmd">clog</span></pre>
+            </div>
+
+            <p class="doc-text">On first launch, clog scans <code>~/.claude/projects/</code> and indexes all conversation files. This takes a few seconds for typical setups (under 60 seconds for 1 GB of data). After that, incremental indexing keeps things current as Claude Code writes new conversations.</p>
+
+            <p class="doc-text">Use <kbd>Tab</kbd> to cycle between panes, arrow keys or <kbd>j</kbd>/<kbd>k</kbd> to navigate within a pane, and <kbd>Enter</kbd> to select. Press <kbd>/</kbd> to search, <kbd>f</kbd> to filter, <kbd>w</kbd> to toggle the watchlist, <kbd>M</kbd> for memory, <kbd>H</kbd> for hooks, and <kbd>?</kbd> for settings.</p>
+
+            <div class="code-block">
+                <div class="code-block-header">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+                    Force reindex
+                </div>
+<pre><span class="cmd">clog</span> <span class="flag">--reindex</span></pre>
+            </div>
+        </div>
+
+
+        <!-- ── 3. Keybindings ── -->
+        <div id="keybindings" class="doc-section" style="scroll-margin-top: 80px;">
+            <h2 class="doc-section-title">
+                <span class="section-icon" style="background: rgba(251, 191, 36, 0.15);">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-yellow)" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10"/></svg>
+                </span>
+                Keybindings
+            </h2>
+
+            <h3 class="doc-sub-title">Navigation</h3>
+            <table class="key-table">
+                <thead><tr><th>Key</th><th>Action</th></tr></thead>
+                <tbody>
+                    <tr><td><kbd>Tab</kbd></td><td>Next pane</td></tr>
+                    <tr><td><kbd>Shift+Tab</kbd></td><td>Previous pane</td></tr>
+                    <tr><td><kbd>↑</kbd> / <kbd>k</kbd></td><td>Move up / scroll up</td></tr>
+                    <tr><td><kbd>↓</kbd> / <kbd>j</kbd></td><td>Move down / scroll down</td></tr>
+                    <tr><td><kbd>PgUp</kbd> / <kbd>PgDn</kbd></td><td>Page up / down in detail pane</td></tr>
+                    <tr><td><kbd>g</kbd></td><td>Jump to bottom of conversation</td></tr>
+                    <tr><td><kbd>G</kbd></td><td>Jump to top of conversation</td></tr>
+                    <tr><td><kbd>q</kbd></td><td>Quit (shows confirmation dialog)</td></tr>
+                    <tr><td><kbd>Ctrl+C</kbd></td><td>Force quit immediately</td></tr>
+                </tbody>
+            </table>
+
+            <h3 class="doc-sub-title">Search</h3>
+            <table class="key-table">
+                <thead><tr><th>Key</th><th>Action</th></tr></thead>
+                <tbody>
+                    <tr><td><kbd>/</kbd></td><td>Open search (project scope)</td></tr>
+                    <tr><td><kbd>Tab</kbd></td><td>Cycle scope: project → global → local (while search is open)</td></tr>
+                    <tr><td><kbd>Enter</kbd></td><td>Navigate to selected result</td></tr>
+                    <tr><td><kbd>n</kbd></td><td>Next match</td></tr>
+                    <tr><td><kbd>N</kbd></td><td>Previous match</td></tr>
+                    <tr><td><kbd>Esc</kbd></td><td>Close search (keeps highlight); press again to clear</td></tr>
+                </tbody>
+            </table>
+
+            <h3 class="doc-sub-title">Filters & Watchlist</h3>
+            <table class="key-table">
+                <thead><tr><th>Key</th><th>Action</th></tr></thead>
+                <tbody>
+                    <tr><td><kbd>f</kbd></td><td>Open filter editor</td></tr>
+                    <tr><td><kbd>F</kbd></td><td>Clear all filters</td></tr>
+                    <tr><td><kbd>w</kbd></td><td>Toggle watchlist pane</td></tr>
+                    <tr><td><kbd>W</kbd></td><td>Add new watchlist item</td></tr>
+                </tbody>
+            </table>
+
+            <h3 class="doc-sub-title">Views</h3>
+            <table class="key-table">
+                <thead><tr><th>Key</th><th>Action</th></tr></thead>
+                <tbody>
+                    <tr><td><kbd>M</kbd></td><td>Open Memory viewer</td></tr>
+                    <tr><td><kbd>H</kbd></td><td>Open Hooks viewer</td></tr>
+                    <tr><td><kbd>?</kbd></td><td>Open Settings panel</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+
+        <!-- ── 4. Search ── -->
+        <div id="search" class="doc-section" style="scroll-margin-top: 80px;">
+            <h2 class="doc-section-title">
+                <span class="section-icon" style="background: rgba(16, 185, 129, 0.15);">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-green)" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                </span>
+                Search
+            </h2>
+
+            <p class="doc-text">Search is powered by SQLite FTS5 with Porter stemming. It searches across all message content and tool call names.</p>
+
+            <div class="code-block">
+                <div class="code-block-header">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    Query examples
+                </div>
+<pre><span class="val">deploy production</span>           <span class="comment"># "deploy" AND "production"</span>
+<span class="val">"deploy to production"</span>       <span class="comment"># exact phrase match</span>
+<span class="val">error OR panic</span>               <span class="comment"># boolean OR</span>
+<span class="val">fix bug model:opus</span>           <span class="comment"># FTS + structured filter</span></pre>
+            </div>
+
+            <h3 class="doc-sub-title">Search Scopes</h3>
+            <ul class="doc-list">
+                <li><strong>Local</strong> — within the current session's messages</li>
+                <li><strong>Project</strong> — across all sessions in the selected project (default)</li>
+                <li><strong>Global</strong> — across all projects</li>
+            </ul>
+
+            <p class="doc-text">Press <kbd>Tab</kbd> while the search bar is open to cycle between scopes.</p>
+        </div>
+
+
+        <!-- ── 5. Filters ── -->
+        <div id="filters" class="doc-section" style="scroll-margin-top: 80px;">
+            <h2 class="doc-section-title">
+                <span class="section-icon" style="background: rgba(249, 115, 22, 0.15);">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-orange)" stroke-width="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                </span>
+                Filters
+            </h2>
+
+            <p class="doc-text">Filters narrow the conversation log to messages matching specific criteria. Press <kbd>f</kbd> to open the filter editor, type a filter expression, and press <kbd>Enter</kbd>. Filters are stackable — multiple filters are ANDed together.</p>
+
+            <div class="code-block">
+                <div class="code-block-header">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                    Filter expressions
+                </div>
+<pre><span class="flag">type:</span><span class="val">user</span>                     <span class="comment"># show only user messages</span>
+<span class="flag">type:</span><span class="val">assistant</span>                <span class="comment"># show only assistant responses</span>
+<span class="flag">model:</span><span class="val">opus</span>                    <span class="comment"># messages from Opus models</span>
+<span class="flag">tool:</span><span class="val">Bash</span>                     <span class="comment"># messages that used the Bash tool</span>
+<span class="flag">tokens:</span><span class="val">&gt;10000</span>                <span class="comment"># messages with &gt;10k tokens</span>
+<span class="flag">model:</span><span class="val">opus</span> <span class="flag">tool:</span><span class="val">Edit</span>           <span class="comment"># combined: Opus + Edit tool</span></pre>
+            </div>
+
+            <h3 class="doc-sub-title">Filter Fields</h3>
+            <table class="key-table">
+                <thead><tr><th>Field</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td><code>type:</code></td><td>Message type — <code>user</code>, <code>assistant</code>, <code>system</code></td></tr>
+                    <tr><td><code>model:</code></td><td>Model name — <code>opus</code>, <code>sonnet</code>, <code>haiku</code> (substring match)</td></tr>
+                    <tr><td><code>tool:</code></td><td>Tool name used in the message (case-insensitive)</td></tr>
+                    <tr><td><code>tokens:&gt;N</code></td><td>Messages with total tokens above N</td></tr>
+                    <tr><td><code>tokens:&lt;N</code></td><td>Messages with total tokens below N</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+
+        <!-- ── 6. Watchlist ── -->
+        <div id="watchlist" class="doc-section" style="scroll-margin-top: 80px;">
+            <h2 class="doc-section-title">
+                <span class="section-icon" style="background: rgba(239, 68, 68, 0.15);">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-red)" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                </span>
+                Watchlist
+            </h2>
+
+            <p class="doc-text">The watchlist turns clog from a passive viewer into an active monitor. Define regex patterns and clog will alert you when new conversation content matches — useful for tracking errors, deployment mentions, specific tool usage, or anything else you want to keep an eye on.</p>
+
+            <p class="doc-text">Press <kbd>w</kbd> to toggle the watchlist pane, <kbd>W</kbd> to add a new item. Items show an unseen match count that updates in real time.</p>
+
+            <h3 class="doc-sub-title">Watchlist Keybindings</h3>
+            <table class="key-table">
+                <thead><tr><th>Key</th><th>Action</th></tr></thead>
+                <tbody>
+                    <tr><td><kbd>a</kbd> / <kbd>W</kbd></td><td>Add new watchlist pattern</td></tr>
+                    <tr><td><kbd>d</kbd></td><td>Delete selected pattern</td></tr>
+                    <tr><td><kbd>Space</kbd></td><td>Toggle enabled/disabled</td></tr>
+                    <tr><td><kbd>Enter</kbd></td><td>Show matches in session list</td></tr>
+                    <tr><td><kbd>m</kbd></td><td>Mark all as seen</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+
+        <!-- ── 7. Memory Viewer ── -->
+        <div id="memory" class="doc-section" style="scroll-margin-top: 80px;">
+            <h2 class="doc-section-title">
+                <span class="section-icon" style="background: rgba(167, 139, 250, 0.15);">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-purple)" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+                </span>
+                Memory Viewer
+            </h2>
+
+            <p class="doc-text">Claude Code auto-generates memory files under <code>~/.claude/projects/&lt;project&gt;/memory/</code>. These contain patterns, preferences, and architectural notes that Claude learns across sessions. Press <kbd>M</kbd> to open a centered modal overlay that displays all memory files for the current project.</p>
+
+            <ul class="doc-list">
+                <li><strong>Tab switching</strong> — <kbd>←</kbd>/<kbd>→</kbd> or <kbd>h</kbd>/<kbd>l</kbd> to switch between memory files (MEMORY.md, patterns.md, etc.)</li>
+                <li><strong>Scrolling</strong> — <kbd>↑</kbd>/<kbd>↓</kbd> or <kbd>j</kbd>/<kbd>k</kbd> to scroll within a file. <kbd>PgUp</kbd>/<kbd>PgDn</kbd> for half-page jumps</li>
+                <li><strong>Markdown rendering</strong> — headers, bullet points, and code are styled for readability</li>
+                <li><strong>Close</strong> — <kbd>Esc</kbd>, <kbd>M</kbd>, or <kbd>m</kbd> to dismiss</li>
+            </ul>
+        </div>
+
+
+        <!-- ── 8. Hooks Viewer ── -->
+        <div id="hooks" class="doc-section" style="scroll-margin-top: 80px;">
+            <h2 class="doc-section-title">
+                <span class="section-icon" style="background: rgba(249, 115, 22, 0.15);">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-orange)" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                </span>
+                Hooks Viewer
+            </h2>
+
+            <p class="doc-text">Claude Code hooks are shell commands that run in response to events (tool calls, notifications, etc.). They can be configured at global, project, or local scope. Press <kbd>H</kbd> to open a modal overlay that displays all hooks configurations with their sources.</p>
+
+            <ul class="doc-list">
+                <li><strong>Source tabs</strong> — <kbd>←</kbd>/<kbd>→</kbd> or <kbd>h</kbd>/<kbd>l</kbd> to switch between global, project, and local hooks sources. Each tab shows the hook count</li>
+                <li><strong>Scrolling</strong> — <kbd>↑</kbd>/<kbd>↓</kbd> or <kbd>j</kbd>/<kbd>k</kbd> to scroll. <kbd>PgUp</kbd>/<kbd>PgDn</kbd> for half-page jumps</li>
+                <li><strong>Syntax highlighting</strong> — event types, matchers, commands, and timeouts are color-coded</li>
+                <li><strong>Close</strong> — <kbd>Esc</kbd> or <kbd>H</kbd> to dismiss</li>
+            </ul>
+        </div>
+
+
+        <!-- ── 9. Settings ── -->
+        <div id="settings" class="doc-section" style="scroll-margin-top: 80px;">
+            <h2 class="doc-section-title">
+                <span class="section-icon" style="background: rgba(251, 191, 36, 0.15);">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-yellow)" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                </span>
+                Settings
+            </h2>
+
+            <p class="doc-text">Press <kbd>?</kbd> to open the settings panel. It displays database statistics (indexed files, total messages) and provides controls for reindexing.</p>
+
+            <h3 class="doc-sub-title">Settings Keybindings</h3>
+            <table class="key-table">
+                <thead><tr><th>Key</th><th>Action</th></tr></thead>
+                <tbody>
+                    <tr><td><kbd>r</kbd></td><td>Incremental reindex (only new/changed files)</td></tr>
+                    <tr><td><kbd>R</kbd></td><td>Full rebuild (drops database and reindexes everything)</td></tr>
+                    <tr><td><kbd>?</kbd> / <kbd>Esc</kbd></td><td>Close settings panel</td></tr>
+                </tbody>
+            </table>
+
+            <div class="callout callout-info">
+                <svg class="callout-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
+                </svg>
+                <span><strong>Stale index warning.</strong> If the index is older than 7 days, the status bar shows a dim yellow hint: <code>INDEX: Xd old — [?]→[r] to refresh</code>. The warning disappears after reindexing.</span>
+            </div>
+        </div>
+
+
+        <!-- ── 10. Data & Indexing ── -->
+        <div id="indexing" class="doc-section" style="scroll-margin-top: 80px;">
+            <h2 class="doc-section-title">
+                <span class="section-icon" style="background: rgba(34, 211, 238, 0.15);">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-cyan)" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+                </span>
+                Data & Indexing
+            </h2>
+
+            <p class="doc-text">clog reads Claude Code's raw JSONL files from <code>~/.claude/projects/</code>. It does not modify or write to these files — it's strictly read-only.</p>
+
+            <p class="doc-text">The search index is stored as a SQLite database. On macOS: <code>~/Library/Application Support/clog/index.db</code>. On Linux: <code>~/.local/share/clog/index.db</code>.</p>
+
+            <h3 class="doc-sub-title">Index Behavior</h3>
+            <ul class="doc-list">
+                <li><strong>Initial index</strong> — full scan on first launch. Parses all JSONL files, populates SQLite + FTS5</li>
+                <li><strong>Incremental</strong> — on file watcher events, only changed files are re-indexed</li>
+                <li><strong>Reindex</strong> — <code>clog --reindex</code> drops and rebuilds from scratch</li>
+                <li><strong>Skipped types</strong> — <code>progress</code>, <code>queue-operation</code>, and <code>file-history-snapshot</code> messages are excluded</li>
+            </ul>
+
+            <div class="callout callout-info">
+                <svg class="callout-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
+                </svg>
+                <span><strong>Performance.</strong> Initial index of ~1 GB of conversation data completes in under 60 seconds. Incremental updates for a single file take under 1 second.</span>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- ── Footer ── -->
+    <div class="footer">
+        <div class="footer-inner">
+            <div class="footer-links">
+                <a href="https://github.com/thinkwright/claude-chronicle" target="_blank" rel="noopener">GitHub</a>
+                <a href="https://github.com/thinkwright/claude-chronicle/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a>
+                <a href="https://github.com/thinkwright/claude-chronicle/issues" target="_blank" rel="noopener">Issues</a>
+            </div>
+            <div class="footer-brand">Built by thinkwright</div>
+        </div>
+    </div>
+
+</body>
+</html>

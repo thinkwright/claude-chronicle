@@ -1,0 +1,1050 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Claude Chronicle (clog) — Navigate, search, and monitor everything Claude Code does</title>
+    <meta name="description" content="Terminal dashboard for Claude Code. Live tail active sessions, full-text search across all conversations, regex watchlists, structured filters, and memory viewing in a single binary.">
+    <meta name="keywords" content="Claude Code, conversation history, terminal dashboard, TUI, Claude Code viewer, Claude Code logs, Claude Code search, JSONL viewer, Claude Code history, developer tools, Go TUI, Bubbletea, conversation log viewer">
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Claude Chronicle (clog) — Navigate, search, and monitor everything Claude Code does">
+    <meta property="og:description" content="Live tail, full-text search, regex watchlists, and structured filters for every Claude Code conversation on your machine.">
+    <meta property="og:site_name" content="thinkwright">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Claude Chronicle (clog) — Navigate, search, and monitor everything Claude Code does">
+    <meta name="twitter:description" content="Live tail, full-text search, regex watchlists, and structured filters for every Claude Code conversation on your machine.">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #0a0a0f;
+            --bg-card: #12121a;
+            --border-subtle: rgba(255, 255, 255, 0.08);
+            --border-hover: rgba(255, 255, 255, 0.15);
+            --text-primary: #f0f0f5;
+            --text-secondary: #9898a8;
+            --text-muted: #5a5a6e;
+            --accent-blue: #3b82f6;
+            --accent-purple: #a78bfa;
+            --accent-green: #10b981;
+            --accent-yellow: #fbbf24;
+            --accent-orange: #f97316;
+            --accent-pink: #ec4899;
+            --accent-red: #ef4444;
+            --accent-cyan: #22d3ee;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(180deg,
+                #0a0a0f 0%,
+                #0d1a2d 5%,
+                #1a3a5c 12%,
+                #1a4a5c 18%,
+                #2a5a6a 22%,
+                #1a4a5c 28%,
+                #1a3a5c 36%,
+                #0d1a2d 50%,
+                #0a0a0f 65%,
+                #0a0a0f 100%
+            );
+            color: var(--text-primary);
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            overflow-x: hidden;
+        }
+
+        /* ── Navigation ── */
+        .nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            padding: 20px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 100;
+            background: rgba(10, 10, 15, 0.8);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+
+        .nav-logo {
+            font-size: 20px;
+            font-weight: 700;
+            color: white;
+            text-decoration: none;
+            letter-spacing: -0.02em;
+            display: flex;
+            align-items: baseline;
+            gap: 0;
+        }
+
+        .nav-logo a { text-decoration: none; }
+
+        .nav-logo-muted {
+            font-weight: 400;
+            color: rgba(255, 255, 255, 0.4);
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 24px;
+            align-items: center;
+        }
+
+        .nav-link {
+            color: rgba(255, 255, 255, 0.7);
+            text-decoration: none;
+            font-size: 14px;
+            transition: color 0.2s;
+        }
+
+        .nav-link:hover { color: white; }
+
+        .nav-btn {
+            background: var(--accent-cyan);
+            color: #0a0a0f;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            transition: background 0.2s;
+        }
+
+        .nav-btn:hover { background: #06b6d4; }
+
+        /* ── Install ribbon (fixed right edge) ── */
+        .install-ribbon {
+            position: fixed;
+            right: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 90;
+            cursor: pointer;
+            writing-mode: vertical-rl;
+            text-orientation: mixed;
+            background: var(--accent-red);
+            color: white;
+            padding: 16px 10px;
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            border-radius: 8px 0 0 8px;
+            box-shadow: -4px 0 20px rgba(239, 68, 68, 0.3);
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .install-ribbon:hover {
+            padding-right: 14px;
+            box-shadow: -6px 0 30px rgba(239, 68, 68, 0.4);
+        }
+
+        .install-ribbon svg {
+            width: 14px;
+            height: 14px;
+            transform: rotate(90deg);
+        }
+
+        .install-ribbon.open {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        /* ── Install drawer ── */
+        .install-drawer-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            z-index: 200;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        .install-drawer-overlay.open {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .install-drawer {
+            position: fixed;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            width: 420px;
+            max-width: 90vw;
+            background: var(--bg-card);
+            border-left: 1px solid var(--border-subtle);
+            z-index: 201;
+            transform: translateX(100%);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .install-drawer.open { transform: translateX(0); }
+
+        .install-drawer-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 24px 24px 20px;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        .install-drawer-title {
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        .install-drawer-close {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            border: 1px solid var(--border-subtle);
+            background: transparent;
+            color: var(--text-secondary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+
+        .install-drawer-close:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-primary);
+        }
+
+        .install-drawer-body {
+            padding: 24px;
+            flex: 1;
+        }
+
+        .install-method { margin-bottom: 28px; }
+        .install-method:last-child { margin-bottom: 0; }
+
+        .install-method-label {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+
+        .install-method-cmd {
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-family: 'JetBrains Mono', 'SF Mono', Monaco, monospace;
+            font-size: 12px;
+            color: #87af87;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            max-width: 100%;
+        }
+
+        .install-method-cmd code {
+            white-space: nowrap;
+            overflow-x: auto;
+            flex: 1;
+            min-width: 0;
+        }
+
+        .install-method-note {
+            margin-top: 6px;
+            font-size: 11px;
+            color: var(--text-muted);
+            line-height: 1.4;
+            padding-left: 12px;
+        }
+
+        .install-quickstart { margin-top: 8px; }
+
+        .install-quickstart-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+            padding-left: 12px;
+        }
+
+        .copy-btn {
+            padding: 3px 8px;
+            border-radius: 4px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.05);
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 10px;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+
+        .copy-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+        }
+
+        .copy-btn.copied {
+            background: rgba(34, 197, 94, 0.2);
+            border-color: rgba(34, 197, 94, 0.3);
+            color: #4ade80;
+        }
+
+        /* ── Hero ── */
+        .hero {
+            padding: 120px 24px 24px;
+            max-width: 900px;
+            margin: 0 auto;
+            text-align: center;
+        }
+
+        .hero-title {
+            font-size: 2.5rem;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            line-height: 1.15;
+            margin-bottom: 20px;
+        }
+
+        .hero-title .accent { color: var(--accent-cyan); }
+
+        .hero-tagline {
+            font-size: 13.5px;
+            line-height: 1.6;
+            color: #c8b878;
+            max-width: 640px;
+            margin: 0 auto 28px;
+        }
+
+        .hero-badges {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 48px;
+        }
+
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 500;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid var(--border-subtle);
+            color: var(--text-secondary);
+        }
+
+        .hero-badge svg { width: 12px; height: 12px; }
+
+        /* ── Hero showcase grid ── */
+        .hero-showcase {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 0 32px 40px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            align-items: stretch;
+        }
+
+        /* ── Terminal screenshot ── */
+        .hero-terminal {
+            background: #0a0f14;
+            border: 1px solid rgba(90, 154, 181, 0.25);
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5), 0 0 80px rgba(34, 211, 238, 0.03);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .term-chrome {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            background: rgba(255, 255, 255, 0.03);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .term-dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+        }
+
+        .term-chrome-title {
+            flex: 1;
+            text-align: center;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        /* Terminal TUI color classes */
+        .t-cyan { color: #5a9ab5; }
+        .t-cyan-bright { color: #7fcfdf; }
+        .t-green { color: #5aaa7a; }
+        .t-yellow { color: #b5a05a; }
+        .t-red { color: #b56a6a; }
+        .t-dim { color: #3a5565; }
+        .t-muted { color: #1a2a35; }
+        .t-white { color: #8899a5; }
+        .t-select { color: #c8d84a; }
+        .t-bold { font-weight: 700; }
+
+        /* ── Content sections ── */
+        .content-wrap {
+            position: relative;
+        }
+
+        .content-container {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 40px 32px;
+        }
+
+        .doc-section { margin-bottom: 56px; }
+
+        .doc-section-title {
+            font-size: 22px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border-subtle);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .section-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            height: 28px;
+            border-radius: 8px;
+            flex-shrink: 0;
+        }
+
+        .section-icon svg { width: 16px; height: 16px; }
+
+        .doc-text {
+            font-size: 15px;
+            line-height: 1.7;
+            color: var(--text-secondary);
+            margin-bottom: 16px;
+        }
+
+        .doc-text strong { color: var(--text-primary); font-weight: 600; }
+
+        .doc-text code,
+        .doc-list code,
+        .pillar-card-body code,
+        .workflow-step-desc code {
+            font-family: 'JetBrains Mono', 'SF Mono', Monaco, monospace;
+            font-size: 13px;
+            background: rgba(255, 255, 255, 0.08);
+            padding: 2px 7px;
+            border-radius: 4px;
+            color: var(--accent-cyan);
+        }
+
+        /* ── Pillar cards ── */
+        .pillar-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+        }
+
+        .pillar-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            overflow: hidden;
+            transition: border-color 0.2s ease;
+        }
+
+        .pillar-card:hover { border-color: var(--border-hover); }
+
+        .pillar-card-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--border-subtle);
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .pillar-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            flex-shrink: 0;
+        }
+
+        .pillar-icon svg { width: 18px; height: 18px; }
+        .pillar-header-text { flex: 1; }
+
+        .pillar-number {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--text-muted);
+            margin-bottom: 2px;
+        }
+
+        .pillar-title { font-size: 17px; font-weight: 700; }
+
+        .pillar-card-body { padding: 20px 24px; }
+        .pillar-card-body .doc-text { font-size: 14px; }
+        .pillar-card-body .doc-list li { font-size: 13px; }
+
+        /* ── Lists ── */
+        .doc-list {
+            list-style: none;
+            margin-bottom: 20px;
+        }
+
+        .doc-list li {
+            position: relative;
+            padding: 8px 0 8px 28px;
+            font-size: 14px;
+            line-height: 1.6;
+            color: var(--text-secondary);
+        }
+
+        .doc-list li::before {
+            content: '';
+            position: absolute;
+            left: 8px;
+            top: 16px;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--accent-cyan);
+        }
+
+        .doc-list li strong { color: var(--text-primary); }
+
+        /* ── Feature cards ── */
+        .features-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 14px;
+        }
+
+        .feature-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 10px;
+            padding: 24px;
+            transition: border-color 0.2s ease;
+        }
+
+        .feature-card:hover { border-color: var(--border-hover); }
+
+        .feature-card-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .feature-card-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px;
+            height: 24px;
+            border-radius: 7px;
+            flex-shrink: 0;
+        }
+
+        .feature-card-icon svg { width: 13px; height: 13px; }
+
+        .feature-card-title {
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .feature-card-desc {
+            font-size: 12px;
+            line-height: 1.6;
+            color: var(--text-secondary);
+        }
+
+        /* ── Workflow steps ── */
+        .workflow-steps {
+            position: relative;
+            padding-left: 36px;
+            margin-bottom: 24px;
+        }
+
+        .workflow-steps::before {
+            content: '';
+            position: absolute;
+            left: 14px;
+            top: 8px;
+            bottom: 8px;
+            width: 1px;
+            background: var(--border-subtle);
+        }
+
+        .workflow-step {
+            position: relative;
+            margin-bottom: 20px;
+        }
+
+        .workflow-step:last-child { margin-bottom: 0; }
+
+        .workflow-step-dot {
+            position: absolute;
+            left: -28px;
+            top: 4px;
+            width: 13px;
+            height: 13px;
+            border-radius: 50%;
+            border: 2px solid;
+            background: var(--bg-dark);
+        }
+
+        .workflow-step-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+
+        .workflow-step-desc {
+            font-size: 14px;
+            line-height: 1.6;
+            color: var(--text-secondary);
+        }
+
+        /* ── Keybinding table ── */
+        .key-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 24px;
+            font-size: 14px;
+        }
+
+        .key-table th {
+            text-align: left;
+            font-weight: 600;
+            color: var(--text-primary);
+            padding: 10px 12px 10px 0;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        .key-table td {
+            padding: 10px 12px 10px 0;
+            color: var(--text-secondary);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+            vertical-align: top;
+        }
+
+        .key-table tr:last-child td { border-bottom: none; }
+
+        .key-table kbd {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            background: rgba(255, 255, 255, 0.08);
+            padding: 2px 8px;
+            border-radius: 4px;
+            color: var(--accent-cyan);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        /* ── Footer ── */
+        .footer {
+            border-top: 1px solid var(--border-subtle);
+            padding: 48px 32px;
+            text-align: center;
+        }
+
+        .footer-inner {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .footer-links {
+            display: flex;
+            justify-content: center;
+            gap: 24px;
+            margin-bottom: 16px;
+        }
+
+        .footer-links a {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 13px;
+            transition: color 0.2s;
+        }
+
+        .footer-links a:hover { color: var(--text-secondary); }
+
+        .footer-brand {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        /* ── Animations ── */
+        .fade-in {
+            animation: fadeIn 0.5s ease-out forwards;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        /* ── Responsive ── */
+        @media (max-width: 900px) {
+            .hero-showcase { grid-template-columns: 1fr; }
+            .pillar-grid { grid-template-columns: 1fr; }
+            .features-grid { grid-template-columns: 1fr 1fr; }
+        }
+
+        @media (max-width: 768px) {
+            .nav-links { gap: 12px; }
+            .install-drawer { width: 100%; max-width: 100vw; }
+        }
+
+        @media (max-width: 600px) {
+            .content-container { padding: 60px 20px 60px; }
+            .hero { padding: 100px 20px 40px; }
+            .hero-title { font-size: 1.75rem; }
+            .features-grid { grid-template-columns: 1fr; }
+            .term-body { font-size: 10px; padding: 14px; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ── Navigation ── -->
+    <nav class="nav">
+        <div class="nav-logo"><span class="nav-logo-muted">thinkwright /</span> <a href="./" style="color: white; text-decoration: none;">clog</a></div>
+        <div class="nav-links">
+            <a href="#features" class="nav-link">Features</a>
+            <a href="docs.html" class="nav-link">Docs</a>
+            <a href="https://github.com/thinkwright/claude-chronicle" class="nav-link" target="_blank" rel="noopener">GitHub</a>
+        </div>
+    </nav>
+
+    <!-- ── Install ribbon ── -->
+    <div class="install-ribbon" id="install-ribbon" onclick="toggleDrawer()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Install
+    </div>
+
+    <!-- ── Install drawer overlay ── -->
+    <div class="install-drawer-overlay" id="drawer-overlay" onclick="toggleDrawer()"></div>
+
+    <!-- ── Install drawer ── -->
+    <div class="install-drawer" id="install-drawer">
+        <div class="install-drawer-header">
+            <div class="install-drawer-title">Install clog</div>
+            <button class="install-drawer-close" onclick="toggleDrawer()">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div class="install-drawer-body">
+            <div class="install-method">
+                <div class="install-method-label">Homebrew</div>
+                <div class="install-method-cmd">
+                    <code>brew install thinkwright/tap/clog</code>
+                    <button class="copy-btn" onclick="copyCode(this, 'brew install thinkwright/tap/clog')">Copy</button>
+                </div>
+            </div>
+
+            <div class="install-method">
+                <div class="install-method-label">Go Install</div>
+                <div class="install-method-cmd">
+                    <code>go install github.com/thinkwright/claude-chronicle/cmd/clog@latest</code>
+                    <button class="copy-btn" onclick="copyCode(this, 'go install github.com/thinkwright/claude-chronicle/cmd/clog@latest')">Copy</button>
+                </div>
+            </div>
+
+            <div class="install-method">
+                <div class="install-method-label">From Source</div>
+                <div class="install-method-cmd">
+                    <code>git clone https://github.com/thinkwright/claude-chronicle && cd claude-chronicle && make build</code>
+                    <button class="copy-btn" onclick="copyCode(this, 'git clone https://github.com/thinkwright/claude-chronicle && cd claude-chronicle && make build')">Copy</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Hero ── -->
+    <section class="hero">
+        <h1 class="hero-title fade-in" style="animation-delay: 0.2s;">
+            A chronicle of everything<br>Claude Code is doing on your system.
+        </h1>
+
+        <p class="hero-tagline fade-in" style="animation-delay: 0.3s;">
+            <span style="color: var(--text-primary); font-weight: 600;">Claude Chronicle</span> <strong style="color: var(--text-primary);">(clog)</strong> is a looking glass for Claude Code activity on your machine. Full-text search, regex watchlists, live tailing, structured filters, and memory viewing in a single binary.
+        </p>
+
+        <div class="hero-badges fade-in" style="animation-delay: 0.4s;">
+            <span class="hero-badge">
+                <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-purple)" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                Zero config
+            </span>
+            <span class="hero-badge">
+                <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-cyan)" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+                Single binary
+            </span>
+            <span class="hero-badge">
+                <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-green)" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                Full-text search
+            </span>
+            <span class="hero-badge">
+                <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-yellow)" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                Live tailing
+            </span>
+            <span class="hero-badge">
+                <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-orange)" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                Memory &amp; Hooks
+            </span>
+        </div>
+    </section>
+
+    <!-- ── Showcase: screenshot + feature cards ── -->
+    <div class="hero-showcase fade-in" id="features" style="animation-delay: 0.5s; scroll-margin-top: 80px;">
+        <div class="hero-terminal">
+            <div class="term-chrome">
+                <div class="term-dot" style="background: #ff5f57;"></div>
+                <div class="term-dot" style="background: #febc2e;"></div>
+                <div class="term-dot" style="background: #28c840;"></div>
+                <div class="term-chrome-title">clog</div>
+            </div>
+            <img src="clog-screenshot.png" alt="Claude Chronicle terminal dashboard showing projects, sessions, conversation log, and watchlist" style="width: 100%; flex: 1; display: block;">
+        </div>
+
+        <div class="features-grid">
+            <div class="feature-card">
+                <div class="feature-card-header">
+                    <div class="feature-card-icon" style="background: rgba(34, 211, 238, 0.15);">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-cyan)" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                    </div>
+                    <div class="feature-card-title">Multi-Pane Dashboard</div>
+                </div>
+                <div class="feature-card-desc">Projects, sessions, watchlist, and conversation detail in a split layout. Memory and Hooks introspection a hotkey away.</div>
+            </div>
+            <div class="feature-card">
+                <div class="feature-card-header">
+                    <div class="feature-card-icon" style="background: rgba(16, 185, 129, 0.15);">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-green)" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    </div>
+                    <div class="feature-card-title">Full-Text Search</div>
+                </div>
+                <div class="feature-card-desc">SQLite FTS5-powered search across all conversation content. Phrase matching, boolean operators, scope switching.</div>
+            </div>
+            <div class="feature-card">
+                <div class="feature-card-header">
+                    <div class="feature-card-icon" style="background: rgba(251, 191, 36, 0.15);">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-yellow)" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    </div>
+                    <div class="feature-card-title">Watchlist</div>
+                </div>
+                <div class="feature-card-desc">Define regex patterns to monitor across all conversations. Unseen matches light up in real time.</div>
+            </div>
+            <div class="feature-card">
+                <div class="feature-card-header">
+                    <div class="feature-card-icon" style="background: rgba(167, 139, 250, 0.15);">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-purple)" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                    </div>
+                    <div class="feature-card-title">Live Tailing</div>
+                </div>
+                <div class="feature-card-desc">Auto-scrolls as Claude Code writes. Filter, search, and traverse the full conversation log in real time.</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Content ── -->
+    <div class="content-wrap">
+        <div class="content-container">
+
+            <!-- ── How It Works ── -->
+            <div class="doc-section">
+                <h2 class="doc-section-title">
+                    <span class="section-icon" style="background: rgba(16, 185, 129, 0.15);">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-green)" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    </span>
+                    How It Works
+                </h2>
+
+                <div class="workflow-steps">
+                    <div class="workflow-step">
+                        <div class="workflow-step-dot" style="border-color: var(--accent-cyan);"></div>
+                        <div class="workflow-step-title">Discovers your Claude Code projects</div>
+                        <div class="workflow-step-desc">Scans <code>~/.claude/projects/</code> for all JSONL conversation files. Auto-detects project names, session counts, and last-modified times.</div>
+                    </div>
+                    <div class="workflow-step">
+                        <div class="workflow-step-dot" style="border-color: var(--accent-green);"></div>
+                        <div class="workflow-step-title">Indexes everything with SQLite + FTS5</div>
+                        <div class="workflow-step-desc">On first launch, parses all conversation files and builds a full-text search index. Incremental updates keep the index current as new conversations happen.</div>
+                    </div>
+                    <div class="workflow-step">
+                        <div class="workflow-step-dot" style="border-color: var(--accent-purple);"></div>
+                        <div class="workflow-step-title">Renders a TUI dashboard</div>
+                        <div class="workflow-step-desc">Built with Go + Bubbletea. Three-pane layout with custom box-drawing borders, model-colored indicators, token counts, and scrollbars.</div>
+                    </div>
+                    <div class="workflow-step">
+                        <div class="workflow-step-dot" style="border-color: var(--accent-yellow);"></div>
+                        <div class="workflow-step-title">Watches for changes in real time</div>
+                        <div class="workflow-step-desc">File watchers detect new content as Claude Code writes. The conversation log auto-scrolls, watchlist patterns fire, and the index stays fresh.</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── What You See ── -->
+            <div class="doc-section">
+                <h2 class="doc-section-title">
+                    <span class="section-icon" style="background: rgba(167, 139, 250, 0.15);">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-purple)" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                    </span>
+                    What You See
+                </h2>
+
+                <div class="pillar-grid">
+                    <div class="pillar-card">
+                        <div class="pillar-card-header">
+                            <div class="pillar-icon" style="background: rgba(34, 211, 238, 0.15);">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-cyan)" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                            </div>
+                            <div class="pillar-header-text">
+                                <div class="pillar-number">Left Column</div>
+                                <div class="pillar-title">Projects & Sessions</div>
+                            </div>
+                        </div>
+                        <div class="pillar-card-body">
+                            <p class="doc-text">All your Claude Code projects with recency indicators. Select a project to see its sessions sorted by last modified. Session size bars show relative conversation length.</p>
+                        </div>
+                    </div>
+
+                    <div class="pillar-card">
+                        <div class="pillar-card-header">
+                            <div class="pillar-icon" style="background: rgba(16, 185, 129, 0.15);">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-green)" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                            </div>
+                            <div class="pillar-header-text">
+                                <div class="pillar-number">Right Column</div>
+                                <div class="pillar-title">Conversation Log</div>
+                            </div>
+                        </div>
+                        <div class="pillar-card-body">
+                            <p class="doc-text">Full conversation with user prompts, assistant responses, tool calls, and token usage. Color-coded message types, model-colored dots, and live-tail mode for active sessions.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── Additional Features ── -->
+            <div class="doc-section">
+                <h2 class="doc-section-title">
+                    <span class="section-icon" style="background: rgba(251, 191, 36, 0.15);">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-yellow)" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                    </span>
+                    More
+                </h2>
+
+                <ul class="doc-list">
+                    <li><strong>Conversation filters</strong> — filter the log by message type, model, tool usage, or token count with <kbd>f</kbd></li>
+                    <li><strong>Project memory viewer</strong> — browse Claude Code's auto-generated MEMORY.md files in a centered modal with <kbd>M</kbd></li>
+                    <li><strong>Scrollbars</strong> — proportional scrollbar indicators on every pane</li>
+                    <li><strong>Model indicators</strong> — color-coded dots distinguish Opus, Sonnet, and Haiku at a glance</li>
+                    <li><strong>Token accounting</strong> — input/output token counts per message and per session</li>
+                    <li><strong>Keyboard-driven</strong> — vim-style navigation, Tab cycling, and single-key actions throughout</li>
+                </ul>
+            </div>
+
+        </div>
+
+        <!-- ── Footer ── -->
+        <div class="footer">
+            <div class="footer-inner">
+                <div class="footer-links">
+                    <a href="https://github.com/thinkwright/claude-chronicle" target="_blank" rel="noopener">GitHub</a>
+                    <a href="https://github.com/thinkwright/claude-chronicle/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a>
+                    <a href="https://github.com/thinkwright/claude-chronicle/issues" target="_blank" rel="noopener">Issues</a>
+                </div>
+                <div class="footer-brand">Built by thinkwright</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    (function() {
+        // ── Install drawer toggle ──
+        window.toggleDrawer = function() {
+            var drawer = document.getElementById('install-drawer');
+            var overlay = document.getElementById('drawer-overlay');
+            var ribbon = document.getElementById('install-ribbon');
+            var isOpen = drawer.classList.contains('open');
+            if (isOpen) {
+                drawer.classList.remove('open');
+                overlay.classList.remove('open');
+                ribbon.classList.remove('open');
+            } else {
+                drawer.classList.add('open');
+                overlay.classList.add('open');
+                ribbon.classList.add('open');
+            }
+        };
+
+        // Close on Escape
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                var drawer = document.getElementById('install-drawer');
+                if (drawer.classList.contains('open')) toggleDrawer();
+            }
+        });
+
+        // ── Copy to clipboard ──
+        window.copyCode = function(btn, text) {
+            navigator.clipboard.writeText(text).then(function() {
+                btn.textContent = 'Copied!';
+                btn.classList.add('copied');
+                setTimeout(function() {
+                    btn.textContent = 'Copy';
+                    btn.classList.remove('copied');
+                }, 2000);
+            });
+        };
+    })();
+    </script>
+</body>
+</html>
