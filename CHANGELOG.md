@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-02-15
+
+### Added
+- Watchlist enter key filters sessions pane to matching sessions
+- Live watchlist matching on incremental and full index
+- Delete watch confirmation prompt (y/n)
+- Case-insensitive regex hint in watch editor
+
+### Fixed
+- Auto-resize terminal to minimum 120×40 on launch
+- Homebrew formula renamed to `clog` to match binary
+
 ## [0.1.0] - 2026-02-15
 
 ### Added
