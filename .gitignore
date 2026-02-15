@@ -1,0 +1,58 @@
+# Compiled binaries (root only — don't match cmd/clog/)
+/clog
+/clog.exe
+dist/
+
+# Test and coverage output
+*.test
+*.out
+coverage.html
+coverage.txt
+
+# Go workspace (if used)
+go.work
+go.work.sum
+
+# Dependency directory (if vendored)
+vendor/
+
+# Environment and secrets
+.env
+.env.*
+*.key
+*.pem
+
+# OS artifacts
+.DS_Store
+.DS_Store?
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+._*
+
+# Editor and IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
+.project
+.settings/
+.classpath
+
+# Planning and scratch
+planning/
+scratch/
+notes/
+TODO.md
+NOTES.md
+*.draft
+*.scratch
+
+# Debug
+__debug_bin*
+debug
+*.prof
+*.trace

@@ -1,0 +1,195 @@
+package claude
+
+import (
+	"bufio"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+)
+
+type SessionsIndex struct {
+	Version int            `json:"version"`
+	Entries []SessionEntry `json:"entries"`
+}
+
+type SessionEntry struct {
+	SessionID    string `json:"sessionId"`
+	FullPath     string `json:"fullPath"`
+	FileMtime    int64  `json:"fileMtime"`
+	FirstPrompt  string `json:"firstPrompt"`
+	MessageCount int    `json:"messageCount"`
+	Created      string `json:"created"`
+	Modified     string `json:"modified"`
+	GitBranch    string `json:"gitBranch"`
+	ProjectPath  string `json:"projectPath"`
+	IsSidechain  bool   `json:"isSidechain"`
+}
+
+func LoadSessionsIndex(projectDataDir string) (*SessionsIndex, error) {
+	path := filepath.Join(projectDataDir, "sessions-index.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var idx SessionsIndex
+	if err := json.Unmarshal(data, &idx); err != nil {
+		return nil, err
+	}
+
+	return &idx, nil
+}
+
+func LoadSessions(projectDataDir string) ([]SessionEntry, error) {
+	// Try sessions-index.json first
+	idx, err := LoadSessionsIndex(projectDataDir)
+	if err == nil {
+		var sessions []SessionEntry
+		for _, e := range idx.Entries {
+			if !e.IsSidechain {
+				sessions = append(sessions, e)
+			}
+		}
+		sort.Slice(sessions, func(i, j int) bool {
+			return sessions[i].FileMtime > sessions[j].FileMtime
+		})
+		return sessions, nil
+	}
+
+	// Fallback: scan .jsonl files directly
+	return scanJSONLFiles(projectDataDir)
+}
+
+// scanJSONLFiles discovers sessions by reading .jsonl files directly.
+func scanJSONLFiles(dir string) ([]SessionEntry, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	var sessions []SessionEntry
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
+			continue
+		}
+
+		fullPath := filepath.Join(dir, e.Name())
+		sessionID := strings.TrimSuffix(e.Name(), ".jsonl")
+
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+
+		entry := SessionEntry{
+			SessionID: sessionID,
+			FullPath:  fullPath,
+			FileMtime: info.ModTime().UnixMilli(),
+			Modified:  info.ModTime().Format("2006-01-02T15:04:05.000Z"),
+		}
+
+		// Read first few lines to extract metadata
+		extractSessionMeta(fullPath, &entry)
+
+		if entry.MessageCount == 0 {
+			continue
+		}
+
+		sessions = append(sessions, entry)
+	}
+
+	sort.Slice(sessions, func(i, j int) bool {
+		return sessions[i].FileMtime > sessions[j].FileMtime
+	})
+
+	return sessions, nil
+}
+
+// extractSessionMeta reads the first N lines of a JSONL file to get
+// first prompt, timestamp, git branch, and approximate message count.
+func extractSessionMeta(path string, entry *SessionEntry) {
+	f, err := os.Open(path)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0), 1024*1024) // 1MB max line
+
+	count := 0
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		if len(line) == 0 {
+			continue
+		}
+		count++
+
+		var raw struct {
+			Type      string `json:"type"`
+			Timestamp string `json:"timestamp"`
+			GitBranch string `json:"gitBranch"`
+			Message   struct {
+				Role    string          `json:"role"`
+				Content json.RawMessage `json:"content"`
+			} `json:"message"`
+		}
+		if err := json.Unmarshal(line, &raw); err != nil {
+			continue
+		}
+
+		// Grab timestamp from first message
+		if entry.Created == "" && raw.Timestamp != "" {
+			entry.Created = raw.Timestamp
+		}
+
+		// Grab git branch
+		if entry.GitBranch == "" && raw.GitBranch != "" {
+			entry.GitBranch = raw.GitBranch
+		}
+
+		// Grab first user prompt
+		if entry.FirstPrompt == "" && raw.Type == "user" {
+			entry.FirstPrompt = extractContentText(raw.Message.Content)
+		}
+
+		// Update modified timestamp
+		if raw.Timestamp != "" {
+			entry.Modified = raw.Timestamp
+		}
+	}
+
+	entry.MessageCount = count
+}
+
+func extractContentText(raw json.RawMessage) string {
+	// Try as string
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		if len(s) > 120 {
+			return s[:120]
+		}
+		return s
+	}
+
+	// Try as array of content blocks
+	var blocks []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(raw, &blocks); err == nil {
+		for _, b := range blocks {
+			if b.Type == "text" && b.Text != "" {
+				t := b.Text
+				if len(t) > 120 {
+					return t[:120]
+				}
+				return t
+			}
+		}
+	}
+
+	return ""
+}
