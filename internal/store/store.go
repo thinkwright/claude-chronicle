@@ -13,9 +13,9 @@ import (
 )
 
 type Store struct {
-	db       *sql.DB
-	mu       sync.RWMutex
-	reCache  map[string]*regexp.Regexp
+	db        *sql.DB
+	mu        sync.RWMutex
+	reCache   map[string]*regexp.Regexp
 	reCacheMu sync.RWMutex
 }
 
@@ -202,16 +202,23 @@ func (s *Store) Reset() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	tables := []string{
-		"watchlist_matches", "watchlist", "saved_filters",
-		"messages", "sessions", "files",
+	// Drop all tables including FTS and triggers, then recreate from scratch.
+	// This is faster than DELETE FROM each table (which fires per-row FTS triggers).
+	drops := []string{
+		"DROP TABLE IF EXISTS watchlist_matches",
+		"DROP TABLE IF EXISTS watchlist",
+		"DROP TABLE IF EXISTS saved_filters",
+		"DROP TRIGGER IF EXISTS messages_ai",
+		"DROP TRIGGER IF EXISTS messages_ad",
+		"DROP TABLE IF EXISTS messages_fts",
+		"DROP TABLE IF EXISTS messages",
+		"DROP TABLE IF EXISTS sessions",
+		"DROP TABLE IF EXISTS files",
 	}
-	for _, t := range tables {
-		if _, err := s.db.Exec("DELETE FROM " + t); err != nil {
+	for _, stmt := range drops {
+		if _, err := s.db.Exec(stmt); err != nil {
 			return err
 		}
 	}
-	// Rebuild FTS index
-	_, err := s.db.Exec("INSERT INTO messages_fts(messages_fts) VALUES('rebuild')")
-	return err
+	return s.createSchema()
 }

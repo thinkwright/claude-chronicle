@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"unicode/utf8"
 )
 
 type MessageType string
@@ -55,9 +56,9 @@ type messageContent struct {
 }
 
 type contentBlock struct {
-	Type  string `json:"type"`
-	Text  string `json:"text"`
-	Name  string `json:"name"`
+	Type  string          `json:"type"`
+	Text  string          `json:"text"`
+	Name  string          `json:"name"`
 	Input json.RawMessage `json:"input"`
 }
 
@@ -187,13 +188,14 @@ func parseToolResultMessage(raw rawMessage) *Message {
 }
 
 func parseSystemMessage(raw rawMessage) *Message {
-	// System messages have content at the top level, not nested in message
+	// System messages store content in the nested message field.
 	var sys struct {
 		Content string `json:"content"`
 		Subtype string `json:"subtype"`
 	}
-	// Try parsing the raw line again for top-level fields
-	// For system messages, content is a top-level field
+	if raw.Message != nil {
+		_ = json.Unmarshal(raw.Message, &sys)
+	}
 	return &Message{
 		Type:      TypeSystem,
 		UUID:      raw.UUID,
@@ -226,7 +228,7 @@ func extractText(raw json.RawMessage) string {
 
 func extractToolResultText(raw json.RawMessage) string {
 	var blocks []struct {
-		Type    string `json:"type"`
+		Type    string          `json:"type"`
 		Content json.RawMessage `json:"content"`
 	}
 	if err := json.Unmarshal(raw, &blocks); err != nil {
@@ -254,10 +256,16 @@ func extractToolResultText(raw json.RawMessage) string {
 }
 
 func truncate(s string, n int) string {
-	if len(s) <= n {
+	if utf8.RuneCountInString(s) <= n {
 		return s
 	}
-	return s[:n] + "..."
+	// Slice by rune count, not byte count
+	i := 0
+	for j := 0; j < n; j++ {
+		_, size := utf8.DecodeRuneInString(s[i:])
+		i += size
+	}
+	return s[:i] + "..."
 }
 
 func FormatModel(model string) string {

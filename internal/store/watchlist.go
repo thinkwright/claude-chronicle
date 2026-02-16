@@ -61,7 +61,7 @@ func (s *Store) AddWatch(name, pattern, color string) (*WatchItem, error) {
 	}
 
 	// Backfill matches against existing messages
-	go s.matchAllForWatch(item)
+	s.matchAllForWatch(item)
 
 	return item, nil
 }
@@ -304,12 +304,22 @@ func (s *Store) matchAllForWatch(item *WatchItem) {
 		batch++
 
 		if batch%1000 == 0 {
-			tx.Commit()
-			tx, _ = s.db.Begin()
-			stmt, _ = tx.Prepare(`
+			if err := tx.Commit(); err != nil {
+				return
+			}
+			stmt.Close()
+			tx, err = s.db.Begin()
+			if err != nil {
+				return
+			}
+			stmt, err = tx.Prepare(`
 				INSERT INTO watchlist_matches (watchlist_id, message_id, session_id, matched_text, seen)
 				VALUES (?, ?, ?, ?, 0)
 			`)
+			if err != nil {
+				tx.Rollback()
+				return
+			}
 		}
 	}
 
