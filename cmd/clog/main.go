@@ -3,8 +3,10 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/thinkwright/claude-chronicle/internal/config"
 	"github.com/thinkwright/claude-chronicle/internal/store"
 	"github.com/thinkwright/claude-chronicle/internal/ui"
 	"golang.org/x/term"
@@ -14,13 +16,49 @@ var version = "dev"
 
 func main() {
 	reindex := false
-	for _, arg := range os.Args[1:] {
-		switch arg {
+	args := os.Args[1:]
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
 		case "--version", "-v":
 			fmt.Printf("clog %s\n", version)
 			os.Exit(0)
 		case "--reindex":
 			reindex = true
+		case "--add-path":
+			if i+1 >= len(args) {
+				fmt.Fprintln(os.Stderr, "--add-path requires a directory argument")
+				os.Exit(1)
+			}
+			i++
+			dir := args[i]
+			if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+				fmt.Fprintf(os.Stderr, "not a valid directory: %s\n", dir)
+				os.Exit(1)
+			}
+			cfg := config.Load()
+			if cfg.AddProjectPath(dir) {
+				config.Save(cfg)
+				fmt.Printf("added project path: %s\n", filepath.Clean(dir))
+			} else {
+				fmt.Printf("path already configured: %s\n", filepath.Clean(dir))
+			}
+			os.Exit(0)
+		case "--remove-path":
+			if i+1 >= len(args) {
+				fmt.Fprintln(os.Stderr, "--remove-path requires a directory argument")
+				os.Exit(1)
+			}
+			i++
+			dir := args[i]
+			cfg := config.Load()
+			if cfg.RemoveProjectPath(dir) {
+				config.Save(cfg)
+				fmt.Printf("removed project path: %s\n", filepath.Clean(dir))
+			} else {
+				fmt.Fprintf(os.Stderr, "path not found in config: %s\n", filepath.Clean(dir))
+				os.Exit(1)
+			}
+			os.Exit(0)
 		}
 	}
 

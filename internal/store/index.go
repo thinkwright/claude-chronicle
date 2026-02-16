@@ -24,19 +24,42 @@ var skipTypes = map[claude.MessageType]bool{
 	"file-history-snapshot": true,
 }
 
+// collectJSONLFiles returns all .jsonl file paths in dir and its immediate subdirs.
+func collectJSONLFiles(dir string) []string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var paths []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".jsonl") {
+			paths = append(paths, filepath.Join(dir, e.Name()))
+		}
+		if e.IsDir() {
+			subEntries, _ := os.ReadDir(filepath.Join(dir, e.Name()))
+			for _, se := range subEntries {
+				if !se.IsDir() && strings.HasSuffix(se.Name(), ".jsonl") {
+					paths = append(paths, filepath.Join(dir, e.Name(), se.Name()))
+				}
+			}
+		}
+	}
+	return paths
+}
+
 // IndexAll indexes every JSONL file across all projects.
 // Sends progress updates on the channel. Closes the channel when done.
-func (s *Store) IndexAll(progress chan<- IndexProgress) error {
+func (s *Store) IndexAll(progress chan<- IndexProgress, projectPaths []string) error {
 	defer close(progress)
 
 	progress <- IndexProgress{Phase: "discovering"}
 
-	projects, err := claude.DiscoverProjects()
+	projects, err := claude.DiscoverProjects(projectPaths)
 	if err != nil {
 		return fmt.Errorf("discover projects: %w", err)
 	}
 
-	// Collect all JSONL files
+	// Collect all JSONL files (root-level and UUID subdirs)
 	type fileEntry struct {
 		path    string
 		project string
@@ -44,17 +67,8 @@ func (s *Store) IndexAll(progress chan<- IndexProgress) error {
 	var files []fileEntry
 
 	for _, proj := range projects {
-		entries, err := os.ReadDir(proj.DataDir)
-		if err != nil {
-			continue
-		}
-		for _, e := range entries {
-			if !e.IsDir() && strings.HasSuffix(e.Name(), ".jsonl") {
-				files = append(files, fileEntry{
-					path:    filepath.Join(proj.DataDir, e.Name()),
-					project: proj.Name,
-				})
-			}
+		for _, p := range collectJSONLFiles(proj.DataDir) {
+			files = append(files, fileEntry{path: p, project: proj.Name})
 		}
 	}
 
@@ -87,10 +101,10 @@ func (s *Store) IndexAll(progress chan<- IndexProgress) error {
 
 // IndexChanged re-indexes only files whose mtime or size changed.
 // Returns the number of new/updated files.
-func (s *Store) IndexChanged() (int, error) {
+func (s *Store) IndexChanged(projectPaths []string) (int, error) {
 	s.mu.Lock()
 
-	projects, err := claude.DiscoverProjects()
+	projects, err := claude.DiscoverProjects(projectPaths)
 	if err != nil {
 		s.mu.Unlock()
 		return 0, err
@@ -100,17 +114,8 @@ func (s *Store) IndexChanged() (int, error) {
 	var newMsgIDs []int64
 
 	for _, proj := range projects {
-		entries, err := os.ReadDir(proj.DataDir)
-		if err != nil {
-			continue
-		}
-		for _, e := range entries {
-			if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
-				continue
-			}
-
-			path := filepath.Join(proj.DataDir, e.Name())
-			info, err := e.Info()
+		for _, path := range collectJSONLFiles(proj.DataDir) {
+			info, err := os.Stat(path)
 			if err != nil {
 				continue
 			}

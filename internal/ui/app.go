@@ -3,6 +3,8 @@ package ui
 import (
 	"fmt"
 	"math"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -54,9 +56,6 @@ func tailTickCmd() tea.Cmd {
 	})
 }
 
-// Settings
-type settings struct {
-}
 
 type Model struct {
 	projects    ProjectList
@@ -74,8 +73,13 @@ type Model struct {
 	ready       bool
 	frame       int
 	allSessions []claude.SessionEntry
-	settings    settings
-	showSettings bool
+	cfg              config.Config
+	showSettings     bool
+	settingsCursor     int // unified cursor: 0=reindex, 1=rebuild, 2..n+1=paths, n+2=add
+	settingsPathInput  textinput.Model
+	settingsAddingPath bool
+	settingsPathError  string
+	settingsConfirmDel bool
 	confirmQuit  bool
 	indexing        bool   // true while background index is running
 	indexStatus     string // status text for status bar
@@ -84,19 +88,29 @@ type Model struct {
 
 func NewModel(db *store.Store) Model {
 	cfg := config.Load()
+
+	pathInput := textinput.New()
+	pathInput.Placeholder = "/path/to/directory"
+	pathInput.CharLimit = 512
+	pathInput.Prompt = "path: "
+	pathInput.PromptStyle = lipgloss.NewStyle().Foreground(ColorCyan)
+	pathInput.TextStyle = lipgloss.NewStyle().Foreground(ColorWhite)
+	pathInput.PlaceholderStyle = lipgloss.NewStyle().Foreground(ColorDim)
+
 	m := Model{
-		projects:  NewProjectList(),
-		sessions:  NewSessionList(),
-		detail:    NewDetailPane(),
-		search:    NewSearchOverlay(),
-		filterBar: NewFilterBar(),
-		watchlist: NewWatchlistPane(),
-		memory:    NewMemoryModal(),
-		hooks:     NewHooksModal(),
-		store:     db,
-		focus:     paneProjects,
-		settings:  settings{},
-		indexing:  true,
+		projects:          NewProjectList(),
+		sessions:          NewSessionList(),
+		detail:            NewDetailPane(),
+		search:            NewSearchOverlay(),
+		filterBar:         NewFilterBar(),
+		watchlist:         NewWatchlistPane(),
+		memory:            NewMemoryModal(),
+		hooks:             NewHooksModal(),
+		store:             db,
+		focus:             paneProjects,
+		cfg:               cfg,
+		settingsPathInput: pathInput,
+		indexing:          true,
 	}
 	if cfg.WatchlistVisible {
 		m.watchlist.Show()
@@ -105,7 +119,7 @@ func NewModel(db *store.Store) Model {
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(tickCmd(), tailTickCmd(), watcher.Watch(), m.indexAllCmd())
+	return tea.Batch(tickCmd(), tailTickCmd(), watcher.Watch(m.cfg.ProjectPaths), m.indexAllCmd())
 }
 
 func (m Model) indexAllCmd() tea.Cmd {
@@ -116,7 +130,7 @@ func (m Model) indexAllCmd() tea.Cmd {
 			for range progress {
 			}
 		}()
-		err := m.store.IndexAll(progress)
+		err := m.store.IndexAll(progress, m.cfg.ProjectPaths)
 		files := m.store.FileCount()
 		msgs := m.store.MessageCount()
 		return indexDoneMsg{files: files, messages: msgs, err: err}
@@ -131,7 +145,7 @@ func (m Model) rebuildIndexCmd() tea.Cmd {
 			for range progress {
 			}
 		}()
-		err := m.store.IndexAll(progress)
+		err := m.store.IndexAll(progress, m.cfg.ProjectPaths)
 		files := m.store.FileCount()
 		msgs := m.store.MessageCount()
 		return indexDoneMsg{files: files, messages: msgs, err: err}
@@ -140,7 +154,7 @@ func (m Model) rebuildIndexCmd() tea.Cmd {
 
 func (m Model) indexChangedCmd() tea.Cmd {
 	return func() tea.Msg {
-		changed, err := m.store.IndexChanged()
+		changed, err := m.store.IndexChanged(m.cfg.ProjectPaths)
 		if changed == 0 && err == nil {
 			return nil
 		}
@@ -185,7 +199,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case watcher.RefreshMsg:
 		m.loadProjects()
-		return m, tea.Batch(watcher.Watch(), m.indexChangedCmd())
+		return m, tea.Batch(watcher.Watch(m.cfg.ProjectPaths), m.indexChangedCmd())
 
 	case tea.KeyMsg:
 		if m.confirmQuit {
@@ -258,20 +272,147 @@ func (m Model) handleHooksKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// settingsItemCount returns the total number of navigable items in settings.
+// Layout: [reindex, rebuild, ...paths, add-path]
+func (m Model) settingsItemCount() int {
+	return 2 + len(m.cfg.ProjectPaths) + 1
+}
+
+// settingsPathIndex returns the path list index for the current cursor, or -1 if not on a path.
+func (m Model) settingsPathIndex() int {
+	idx := m.settingsCursor - 2
+	if idx >= 0 && idx < len(m.cfg.ProjectPaths) {
+		return idx
+	}
+	return -1
+}
+
 func (m Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.settingsAddingPath {
+		return m.handleSettingsAddPath(msg)
+	}
+	if m.settingsConfirmDel {
+		return m.handleSettingsDeleteConfirm(msg)
+	}
+
+	maxIdx := m.settingsItemCount() - 1
+
 	switch msg.String() {
 	case "?", "esc":
 		m.showSettings = false
+		m.settingsCursor = 0
+		m.settingsPathError = ""
+	case "up", "k":
+		if m.settingsCursor > 0 {
+			m.settingsCursor--
+		}
+	case "down", "j":
+		if m.settingsCursor < maxIdx {
+			m.settingsCursor++
+		}
+	case "enter":
+		switch {
+		case m.settingsCursor == 0: // reindex
+			m.showSettings = false
+			m.indexing = true
+			return m, m.indexAllCmd()
+		case m.settingsCursor == 1: // rebuild
+			m.showSettings = false
+			m.indexing = true
+			return m, m.rebuildIndexCmd()
+		case m.settingsCursor == maxIdx: // add path
+			m.settingsAddingPath = true
+			m.settingsPathError = ""
+			m.settingsPathInput.SetValue("")
+			m.settingsPathInput.Focus()
+			return m, textinput.Blink
+		default: // a path entry — no-op on enter (use d to delete)
+		}
 	case "r":
-		// Incremental reindex
 		m.showSettings = false
 		m.indexing = true
 		return m, m.indexAllCmd()
 	case "R":
-		// Full rebuild (drop + reindex)
 		m.showSettings = false
 		m.indexing = true
 		return m, m.rebuildIndexCmd()
+	case "a":
+		m.settingsAddingPath = true
+		m.settingsPathError = ""
+		m.settingsPathInput.SetValue("")
+		m.settingsPathInput.Focus()
+		return m, textinput.Blink
+	case "d":
+		if pi := m.settingsPathIndex(); pi >= 0 {
+			m.settingsConfirmDel = true
+		}
+	}
+	return m, nil
+}
+
+func (m Model) handleSettingsAddPath(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.settingsAddingPath = false
+		m.settingsPathError = ""
+		m.settingsPathInput.Blur()
+		return m, nil
+	case "enter":
+		path := strings.TrimSpace(m.settingsPathInput.Value())
+		if path == "" {
+			m.settingsAddingPath = false
+			m.settingsPathInput.Blur()
+			return m, nil
+		}
+		// Expand ~ to home directory
+		if strings.HasPrefix(path, "~/") {
+			if home, err := os.UserHomeDir(); err == nil {
+				path = filepath.Join(home, path[2:])
+			}
+		}
+		// Validate: must be an existing directory
+		info, err := os.Stat(path)
+		if err != nil || !info.IsDir() {
+			m.settingsPathError = "not a valid directory"
+			return m, nil
+		}
+		if !m.cfg.AddProjectPath(path) {
+			m.settingsPathError = "path already added"
+			return m, nil
+		}
+		// Success
+		m.settingsAddingPath = false
+		m.settingsPathInput.Blur()
+		m.settingsPathError = ""
+		config.Save(m.cfg)
+		m.loadProjects()
+		return m, tea.Batch(watcher.Watch(m.cfg.ProjectPaths), m.indexChangedCmd())
+	default:
+		m.settingsPathError = ""
+		var cmd tea.Cmd
+		m.settingsPathInput, cmd = m.settingsPathInput.Update(msg)
+		return m, cmd
+	}
+}
+
+func (m Model) handleSettingsDeleteConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y", "Y":
+		if pi := m.settingsPathIndex(); pi >= 0 {
+			m.cfg.RemoveProjectPath(m.cfg.ProjectPaths[pi])
+			// If we deleted the last path, move cursor up to "add path" (which is now at a lower index)
+			maxIdx := m.settingsItemCount() - 1
+			if m.settingsCursor > maxIdx {
+				m.settingsCursor = maxIdx
+			}
+			config.Save(m.cfg)
+			m.loadProjects()
+			m.settingsConfirmDel = false
+			return m, tea.Batch(watcher.Watch(m.cfg.ProjectPaths), m.indexChangedCmd())
+		}
+		m.settingsConfirmDel = false
+	default:
+		m.settingsConfirmDel = false
 	}
 	return m, nil
 }
@@ -287,10 +428,8 @@ func (m Model) handleConfirmQuit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) saveConfig() {
-	cfg := config.Config{
-		WatchlistVisible: m.watchlist.IsVisible(),
-	}
-	config.Save(cfg)
+	m.cfg.WatchlistVisible = m.watchlist.IsVisible()
+	config.Save(m.cfg)
 }
 
 func (m Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -576,7 +715,7 @@ func (m Model) nextPane(dir int) pane {
 }
 
 func (m *Model) loadProjects() {
-	projects, err := claude.DiscoverProjects()
+	projects, err := claude.DiscoverProjects(m.cfg.ProjectPaths)
 	if err != nil {
 		return
 	}
@@ -1005,18 +1144,80 @@ func (m Model) renderSettings() string {
 		lipgloss.NewStyle().Foreground(ColorGreen).Render(fmt.Sprintf("%d", fileCount))))
 	addLine(fmt.Sprintf("  Indexed messages: %s",
 		lipgloss.NewStyle().Foreground(ColorGreen).Render(fmt.Sprintf("%d", msgCount))))
+	// Navigable action items with unified cursor
+	selMark := lipgloss.NewStyle().Foreground(ColorSelect)
+	selText := lipgloss.NewStyle().Foreground(ColorSelect).Bold(true)
+
+	addAction := func(idx int, label string) {
+		if m.settingsCursor == idx {
+			addLine(fmt.Sprintf("  %s %s", selMark.Render("▸"), selText.Render(label)))
+		} else {
+			addLine(fmt.Sprintf("    %s", NormalStyle.Render(label)))
+		}
+	}
+
+	addLine("")
+	addAction(0, "[r] Reindex all files")
+	addAction(1, "[R] Rebuild database")
+
+	// Custom project paths
 	addLine("")
 	addLine("  " + dim.Render(strings.Repeat("─", innerW-4)))
 	addLine("")
-	addLine(fmt.Sprintf("  %s  Reindex all files",
-		SelectedStyle.Render("[r]")))
-	addLine(fmt.Sprintf("  %s  Rebuild database (drop + reindex)",
-		SelectedStyle.Render("[R]")))
+	addLine("  " + lipgloss.NewStyle().Foreground(ColorCyan).Bold(true).Render("CUSTOM PATHS"))
 	addLine("")
 
-	// Footer
-	footer := dim.Render("  Esc close")
-	addLine(footer)
+	if m.settingsAddingPath {
+		m.settingsPathInput.Width = innerW - 10
+		addLine("  " + m.settingsPathInput.View())
+		if m.settingsPathError != "" {
+			addLine("  " + lipgloss.NewStyle().Foreground(ColorRed).Render(m.settingsPathError))
+		}
+	} else if len(m.cfg.ProjectPaths) > 0 {
+		for i, p := range m.cfg.ProjectPaths {
+			pathText := p
+			if len(pathText) > innerW-6 {
+				pathText = "..." + pathText[len(pathText)-(innerW-9):]
+			}
+			cursorIdx := 2 + i
+			if m.settingsConfirmDel && m.settingsCursor == cursorIdx {
+				addLine(fmt.Sprintf("  %s %s",
+					lipgloss.NewStyle().Foreground(ColorRed).Render("▸"),
+					lipgloss.NewStyle().Foreground(ColorRed).Render(pathText)))
+			} else if m.settingsCursor == cursorIdx {
+				addLine(fmt.Sprintf("  %s %s", selMark.Render("▸"), selText.Render(pathText)))
+			} else {
+				addLine(fmt.Sprintf("    %s %s",
+					lipgloss.NewStyle().Foreground(ColorGreen).Render("▸"),
+					NormalStyle.Render(pathText)))
+			}
+		}
+		if m.settingsConfirmDel {
+			if pi := m.settingsPathIndex(); pi >= 0 {
+				addLine("")
+				name := filepath.Base(m.cfg.ProjectPaths[pi])
+				addLine("  " + lipgloss.NewStyle().Foreground(ColorRed).Render(
+					fmt.Sprintf("Remove \"%s\"?  y/n", name)))
+			}
+		}
+	} else {
+		addLine("  " + dim.Render("No custom paths"))
+	}
+
+	addLine("")
+	addIdx := 2 + len(m.cfg.ProjectPaths) // "add path" is always the last item
+	addAction(addIdx, "[a] Add path")
+
+	addLine("")
+
+	// Footer — context-sensitive, kept short to avoid overflow
+	if m.settingsAddingPath {
+		addLine(dim.Render("  Enter: add  Esc: cancel"))
+	} else if m.settingsConfirmDel {
+		addLine(dim.Render("  y: confirm  n: cancel"))
+	} else {
+		addLine(dim.Render("  ↑↓ navigate  Enter select  Esc close"))
+	}
 
 	// Bottom border
 	rows = append(rows, bc.Render("┗"+strings.Repeat("━", innerW)+"┛"))

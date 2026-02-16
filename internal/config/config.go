@@ -8,8 +8,33 @@ import (
 )
 
 type Config struct {
-	WatchlistVisible bool   `json:"watchlist_visible"`
-	DefaultScope     string `json:"default_search_scope"` // "project", "global", "local"
+	WatchlistVisible bool     `json:"watchlist_visible"`
+	DefaultScope     string   `json:"default_search_scope"` // "project", "global", "local"
+	ProjectPaths     []string `json:"project_paths,omitempty"`
+}
+
+// AddProjectPath adds a directory to the custom paths list. Returns false if already present.
+func (c *Config) AddProjectPath(path string) bool {
+	clean := filepath.Clean(path)
+	for _, p := range c.ProjectPaths {
+		if filepath.Clean(p) == clean {
+			return false
+		}
+	}
+	c.ProjectPaths = append(c.ProjectPaths, clean)
+	return true
+}
+
+// RemoveProjectPath removes a directory from the custom paths list. Returns false if not found.
+func (c *Config) RemoveProjectPath(path string) bool {
+	clean := filepath.Clean(path)
+	for i, p := range c.ProjectPaths {
+		if filepath.Clean(p) == clean {
+			c.ProjectPaths = append(c.ProjectPaths[:i], c.ProjectPaths[i+1:]...)
+			return true
+		}
+	}
+	return false
 }
 
 func DefaultConfig() Config {

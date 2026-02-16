@@ -63,6 +63,7 @@ func LoadSessions(projectDataDir string) ([]SessionEntry, error) {
 }
 
 // scanJSONLFiles discovers sessions by reading .jsonl files directly.
+// Checks both root-level files and UUID subdirectories.
 func scanJSONLFiles(dir string) ([]SessionEntry, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -70,34 +71,35 @@ func scanJSONLFiles(dir string) ([]SessionEntry, error) {
 	}
 
 	var sessions []SessionEntry
+
+	// Scan root-level JSONL files
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
 			continue
 		}
+		if entry, ok := sessionFromFile(filepath.Join(dir, e.Name()), e); ok {
+			sessions = append(sessions, entry)
+		}
+	}
 
-		fullPath := filepath.Join(dir, e.Name())
-		sessionID := strings.TrimSuffix(e.Name(), ".jsonl")
-
-		info, err := e.Info()
+	// Scan UUID subdirectories
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		subDir := filepath.Join(dir, e.Name())
+		subEntries, err := os.ReadDir(subDir)
 		if err != nil {
 			continue
 		}
-
-		entry := SessionEntry{
-			SessionID: sessionID,
-			FullPath:  fullPath,
-			FileMtime: info.ModTime().UnixMilli(),
-			Modified:  info.ModTime().Format("2006-01-02T15:04:05.000Z"),
+		for _, se := range subEntries {
+			if se.IsDir() || !strings.HasSuffix(se.Name(), ".jsonl") {
+				continue
+			}
+			if entry, ok := sessionFromFile(filepath.Join(subDir, se.Name()), se); ok {
+				sessions = append(sessions, entry)
+			}
 		}
-
-		// Read first few lines to extract metadata
-		extractSessionMeta(fullPath, &entry)
-
-		if entry.MessageCount == 0 {
-			continue
-		}
-
-		sessions = append(sessions, entry)
 	}
 
 	sort.Slice(sessions, func(i, j int) bool {
@@ -105,6 +107,31 @@ func scanJSONLFiles(dir string) ([]SessionEntry, error) {
 	})
 
 	return sessions, nil
+}
+
+// sessionFromFile builds a SessionEntry from a single .jsonl file.
+func sessionFromFile(fullPath string, e os.DirEntry) (SessionEntry, bool) {
+	sessionID := strings.TrimSuffix(e.Name(), ".jsonl")
+
+	info, err := e.Info()
+	if err != nil {
+		return SessionEntry{}, false
+	}
+
+	entry := SessionEntry{
+		SessionID: sessionID,
+		FullPath:  fullPath,
+		FileMtime: info.ModTime().UnixMilli(),
+		Modified:  info.ModTime().Format("2006-01-02T15:04:05.000Z"),
+	}
+
+	extractSessionMeta(fullPath, &entry)
+
+	if entry.MessageCount == 0 {
+		return SessionEntry{}, false
+	}
+
+	return entry, true
 }
 
 // extractSessionMeta reads the first N lines of a JSONL file to get

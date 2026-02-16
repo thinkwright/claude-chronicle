@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -54,7 +55,7 @@ func TestLoad_MissingFile(t *testing.T) {
 	// No config file exists — should return defaults
 	cfg := Load()
 	expected := DefaultConfig()
-	if cfg != expected {
+	if !reflect.DeepEqual(cfg, expected) {
 		t.Errorf("got %+v, want defaults %+v", cfg, expected)
 	}
 }
@@ -71,7 +72,7 @@ func TestLoad_MalformedJSON(t *testing.T) {
 	// Should return defaults without error
 	cfg := Load()
 	expected := DefaultConfig()
-	if cfg != expected {
+	if !reflect.DeepEqual(cfg, expected) {
 		t.Errorf("malformed json: got %+v, want defaults", cfg)
 	}
 }
