@@ -16,12 +16,12 @@ type DetailPane struct {
 	width        int
 	height       int
 	session      *claude.SessionEntry
-	lines        []string // pre-rendered lines
-	tailing      bool     // auto-scroll to bottom on new content
-	prevMsgCount int      // track message count for change detection
-	searchQuery  string   // current in-pane search highlight
-	matchLines   []int    // line indices containing matches
-	matchIdx     int      // current position in matchLines
+	lines        []string       // pre-rendered lines
+	tailing      bool           // auto-scroll to bottom on new content
+	prevMsgCount int            // track message count for change detection
+	searchQuery  string         // current in-pane search highlight
+	matchLines   []int          // line indices containing matches
+	matchIdx     int            // current position in matchLines
 	filters      []store.Filter // active conversation filters
 }
 
@@ -295,7 +295,7 @@ func (d *DetailPane) renderLines() {
 			}
 			tag := UserMsgStyle.Render("  ┃ ▶ USER")
 			d.lines = append(d.lines, tag)
-			for _, line := range wrapText(msg.Text, contentWidth) {
+			for _, line := range WrapText(msg.Text, contentWidth) {
 				d.lines = append(d.lines, UserMsgStyle.Render("  ┃ ")+NormalStyle.Render(line))
 			}
 			d.lines = append(d.lines, "")
@@ -325,7 +325,7 @@ func (d *DetailPane) renderLines() {
 			if len(text) > 500 {
 				text = text[:500] + "..."
 			}
-			for _, line := range wrapText(text, contentWidth) {
+			for _, line := range WrapText(text, contentWidth) {
 				d.lines = append(d.lines, AssistantMsgStyle.Render("  ┃ ")+NormalStyle.Render(line))
 			}
 
@@ -349,7 +349,7 @@ func (d *DetailPane) renderLines() {
 			if len(text) > 200 {
 				text = text[:200] + "..."
 			}
-			for _, line := range wrapText(text, contentWidth) {
+			for _, line := range WrapText(text, contentWidth) {
 				d.lines = append(d.lines, ToolMsgStyle.Render("  ┃ ")+DimStyle.Render(line))
 			}
 			d.lines = append(d.lines, "")
@@ -363,7 +363,7 @@ func (d *DetailPane) renderLines() {
 			}
 			tag := SystemMsgStyle.Render("  ┃ ◌ SYSTEM")
 			d.lines = append(d.lines, tag)
-			for _, line := range wrapText(msg.Text, contentWidth-4) {
+			for _, line := range WrapText(msg.Text, contentWidth-4) {
 				d.lines = append(d.lines, SystemMsgStyle.Render("  ┃ "+line))
 			}
 			d.lines = append(d.lines, "")
@@ -515,7 +515,9 @@ func (d *DetailPane) HeaderStats() string {
 	return strings.Join(parts, sep)
 }
 
-func wrapText(text string, width int) []string {
+// WrapText wraps text to the given rune-width, breaking on spaces.
+// Exported so other UI components can reuse it.
+func WrapText(text string, width int) []string {
 	if width <= 0 {
 		return []string{text}
 	}
@@ -527,19 +529,20 @@ func wrapText(text string, width int) []string {
 			continue
 		}
 
-		for len(paragraph) > width {
+		runes := []rune(paragraph)
+		for len(runes) > width {
 			cut := width
 			for i := width; i > width/2; i-- {
-				if paragraph[i] == ' ' {
+				if runes[i] == ' ' {
 					cut = i
 					break
 				}
 			}
-			lines = append(lines, paragraph[:cut])
-			paragraph = strings.TrimLeft(paragraph[cut:], " ")
+			lines = append(lines, string(runes[:cut]))
+			runes = []rune(strings.TrimLeft(string(runes[cut:]), " "))
 		}
-		if paragraph != "" {
-			lines = append(lines, paragraph)
+		if len(runes) > 0 {
+			lines = append(lines, string(runes))
 		}
 	}
 

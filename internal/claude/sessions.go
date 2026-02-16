@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 type SessionsIndex struct {
@@ -134,8 +135,9 @@ func sessionFromFile(fullPath string, e os.DirEntry) (SessionEntry, bool) {
 	return entry, true
 }
 
-// extractSessionMeta reads the first N lines of a JSONL file to get
-// first prompt, timestamp, git branch, and approximate message count.
+// extractSessionMeta reads a JSONL file to get first prompt, timestamp,
+// git branch, and message count. Once metadata fields are found, it stops
+// JSON-parsing and only counts remaining lines for performance.
 func extractSessionMeta(path string, entry *SessionEntry) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -147,12 +149,18 @@ func extractSessionMeta(path string, entry *SessionEntry) {
 	scanner.Buffer(make([]byte, 0), 1024*1024) // 1MB max line
 
 	count := 0
+	metaDone := false
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if len(line) == 0 {
 			continue
 		}
 		count++
+
+		// Once we have all metadata, just count lines — skip expensive JSON parsing
+		if metaDone {
+			continue
+		}
 
 		var raw struct {
 			Type      string `json:"type"`
@@ -186,19 +194,29 @@ func extractSessionMeta(path string, entry *SessionEntry) {
 		if raw.Timestamp != "" {
 			entry.Modified = raw.Timestamp
 		}
+
+		// Check if all metadata fields are populated
+		if entry.Created != "" && entry.GitBranch != "" && entry.FirstPrompt != "" {
+			metaDone = true
+		}
 	}
 
 	entry.MessageCount = count
+}
+
+func truncateRunes(s string, n int) string {
+	if utf8.RuneCountInString(s) <= n {
+		return s
+	}
+	runes := []rune(s)
+	return string(runes[:n])
 }
 
 func extractContentText(raw json.RawMessage) string {
 	// Try as string
 	var s string
 	if err := json.Unmarshal(raw, &s); err == nil {
-		if len(s) > 120 {
-			return s[:120]
-		}
-		return s
+		return truncateRunes(s, 120)
 	}
 
 	// Try as array of content blocks
@@ -209,11 +227,7 @@ func extractContentText(raw json.RawMessage) string {
 	if err := json.Unmarshal(raw, &blocks); err == nil {
 		for _, b := range blocks {
 			if b.Type == "text" && b.Text != "" {
-				t := b.Text
-				if len(t) > 120 {
-					return t[:120]
-				}
-				return t
+				return truncateRunes(b.Text, 120)
 			}
 		}
 	}

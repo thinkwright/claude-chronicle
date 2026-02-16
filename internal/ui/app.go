@@ -45,7 +45,7 @@ type indexProgressMsg struct {
 }
 
 func tickCmd() tea.Cmd {
-	return tea.Tick(50*time.Millisecond, func(t time.Time) tea.Msg {
+	return tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg {
 		return tickMsg(t)
 	})
 }
@@ -56,34 +56,33 @@ func tailTickCmd() tea.Cmd {
 	})
 }
 
-
 type Model struct {
-	projects    ProjectList
-	sessions    SessionList
-	detail      DetailPane
-	search      SearchOverlay
-	filterBar   FilterBar
-	watchlist   WatchlistPane
-	memory      MemoryModal
-	hooks       HooksModal
-	store       *store.Store
-	focus       pane
-	width       int
-	height      int
-	ready       bool
-	frame       int
-	allSessions []claude.SessionEntry
-	cfg              config.Config
-	showSettings     bool
+	projects           ProjectList
+	sessions           SessionList
+	detail             DetailPane
+	search             SearchOverlay
+	filterBar          FilterBar
+	watchlist          WatchlistPane
+	memory             MemoryModal
+	hooks              HooksModal
+	store              *store.Store
+	focus              pane
+	width              int
+	height             int
+	ready              bool
+	frame              int
+	allSessions        []claude.SessionEntry
+	cfg                config.Config
+	showSettings       bool
 	settingsCursor     int // unified cursor: 0=reindex, 1=rebuild, 2..n+1=paths, n+2=add
 	settingsPathInput  textinput.Model
 	settingsAddingPath bool
 	settingsPathError  string
 	settingsConfirmDel bool
-	confirmQuit  bool
-	indexing        bool   // true while background index is running
-	indexStatus     string // status text for status bar
-	activeWatchName string // non-empty when viewing watchlist matches
+	confirmQuit        bool
+	indexing           bool   // true while background index is running
+	indexStatus        string // status text for status bar
+	activeWatchName    string // non-empty when viewing watchlist matches
 }
 
 func NewModel(db *store.Store) Model {
@@ -1055,9 +1054,15 @@ func (m Model) renderHeader() string {
 	sgr := int(80 * pulse)
 	sgg := int(255 * pulse)
 	sgb := int(120 * pulse)
-	if sgr > 255 { sgr = 255 }
-	if sgg > 255 { sgg = 255 }
-	if sgb > 255 { sgb = 255 }
+	if sgr > 255 {
+		sgr = 255
+	}
+	if sgg > 255 {
+		sgg = 255
+	}
+	if sgb > 255 {
+		sgb = 255
+	}
 	starColor := lipgloss.Color(fmt.Sprintf("#%02x%02x%02x", sgr, sgg, sgb))
 	star := bg.Foreground(starColor).Bold(true).Render(starFrames[starIdx])
 	titleLabel := bg.Foreground(ColorCyan).Bold(true).Render("CLAUDE CHRONICLE")

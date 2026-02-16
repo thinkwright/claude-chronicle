@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-02-16
+
+### Fixed
+- System messages now render in conversation log (parseSystemMessage was not unmarshalling content)
+- Hyphenated project names display correctly (decodePath validates against filesystem with cwd fallback)
+- Watchlist backfill no longer races with concurrent indexing (runs synchronously with proper error handling)
+- Word-wrap no longer panics on multi-byte UTF-8 content (emoji, CJK, accented characters)
+- Text truncation uses rune-safe slicing instead of byte slicing
+
+### Improved
+- Project discovery skips JSON parsing after metadata found (~99% less work on large sessions)
+- Animation tick rate reduced from 50ms to 500ms (~90% less idle CPU)
+- Database reset uses DROP TABLE instead of per-row DELETE (faster --reindex)
+- Deduplicated word-wrap logic between detail and memory views
+
 ## [0.1.1] - 2026-02-15
 
 ### Added

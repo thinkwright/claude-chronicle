@@ -111,27 +111,7 @@ func (m *MemoryModal) renderLines() {
 	}
 
 	content := m.files[m.fileIdx].Content
-	for _, paragraph := range strings.Split(content, "\n") {
-		if paragraph == "" {
-			m.lines = append(m.lines, "")
-			continue
-		}
-		// Word-wrap long lines
-		for len(paragraph) > contentW {
-			cut := contentW
-			for i := contentW; i > contentW/2; i-- {
-				if paragraph[i] == ' ' {
-					cut = i
-					break
-				}
-			}
-			m.lines = append(m.lines, paragraph[:cut])
-			paragraph = strings.TrimLeft(paragraph[cut:], " ")
-		}
-		if paragraph != "" {
-			m.lines = append(m.lines, paragraph)
-		}
-	}
+	m.lines = WrapText(content, contentW)
 }
 
 func (m *MemoryModal) modalWidth() int {

@@ -1,6 +1,8 @@
 package claude
 
 import (
+	"bufio"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"sort"
@@ -42,12 +44,77 @@ func ProjectsDir() string {
 
 // decodePath converts a folder name like "-Users-jane-Dev-myproject"
 // back to "/Users/jane/Dev/myproject".
-func decodePath(encoded string) string {
+// Because the encoding replaces "/" with "-", original paths containing
+// hyphens are ambiguous. We validate the result and fall back to
+// extracting the real path from JSONL data when the naive decode fails.
+func decodePath(encoded string, dataDir string) string {
 	if len(encoded) == 0 {
 		return ""
 	}
-	// Leading hyphen becomes leading slash, remaining hyphens become slashes
-	return "/" + strings.ReplaceAll(encoded[1:], "-", "/")
+	// Naive decode: leading hyphen becomes /, remaining hyphens become /
+	naive := "/" + strings.ReplaceAll(encoded[1:], "-", "/")
+
+	// If the decoded path exists on disk, it's correct
+	if _, err := os.Stat(naive); err == nil {
+		return naive
+	}
+
+	// Fallback: extract real path from a JSONL file's cwd field
+	if real := extractCwdFromDir(dataDir); real != "" {
+		return real
+	}
+
+	return naive
+}
+
+// extractCwdFromDir reads the first JSONL file in dataDir to find the cwd field.
+func extractCwdFromDir(dataDir string) string {
+	entries, err := os.ReadDir(dataDir)
+	if err != nil {
+		return ""
+	}
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".jsonl") {
+			if cwd := extractCwdFromFile(filepath.Join(dataDir, e.Name())); cwd != "" {
+				return cwd
+			}
+		}
+	}
+	// Check UUID subdirectories (newer Claude Code layout)
+	for _, e := range entries {
+		if e.IsDir() {
+			subEntries, _ := os.ReadDir(filepath.Join(dataDir, e.Name()))
+			for _, sub := range subEntries {
+				if !sub.IsDir() && strings.HasSuffix(sub.Name(), ".jsonl") {
+					if cwd := extractCwdFromFile(filepath.Join(dataDir, e.Name(), sub.Name())); cwd != "" {
+						return cwd
+					}
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// extractCwdFromFile reads the first few lines of a JSONL file looking for the cwd field.
+func extractCwdFromFile(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0), 512*1024)
+	for i := 0; i < 5 && scanner.Scan(); i++ {
+		var raw struct {
+			Cwd string `json:"cwd"`
+		}
+		if json.Unmarshal(scanner.Bytes(), &raw) == nil && raw.Cwd != "" {
+			return raw.Cwd
+		}
+	}
+	return ""
 }
 
 // shortName extracts the last path component as a display name.
@@ -90,7 +157,7 @@ func DiscoverProjects(extraPaths []string) ([]Project, error) {
 			}
 
 			dataDir := filepath.Join(dir, e.Name())
-			decoded := decodePath(e.Name())
+			decoded := decodePath(e.Name(), dataDir)
 
 			// Try index first, fall back to scanning JSONL files
 			sessionCount := 0

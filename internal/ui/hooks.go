@@ -160,7 +160,7 @@ func (h *HooksModal) renderLines() {
 					}
 					// Wrap long commands
 					prefix := fmt.Sprintf("    %s: ", label)
-					wrapped := wrapText(content, contentW-len(prefix))
+					wrapped := WrapText(content, contentW-len(prefix))
 					for i, wl := range wrapped {
 						if i == 0 {
 							h.lines = append(h.lines, prefix+wl)

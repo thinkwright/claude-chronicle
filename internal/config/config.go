@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"runtime"
 )
 
 type Config struct {
@@ -49,9 +48,6 @@ func ConfigDir() string {
 		return filepath.Join(dir, "clog")
 	}
 	home, _ := os.UserHomeDir()
-	if runtime.GOOS == "darwin" {
-		return filepath.Join(home, ".config", "clog")
-	}
 	return filepath.Join(home, ".config", "clog")
 }
 
