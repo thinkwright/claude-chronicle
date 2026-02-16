@@ -138,6 +138,10 @@ func RenderPanel(title string, content string, w, h int, focused bool) string {
 	rows = append(rows, topBorder)
 	for _, line := range lines {
 		visible := visibleLen(line)
+		if visible > innerW {
+			line = truncateToWidth(line, innerW)
+			visible = innerW
+		}
 		pad := ""
 		if visible < innerW {
 			pad = strings.Repeat(" ", innerW-visible)

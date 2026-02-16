@@ -1474,6 +1474,37 @@ func visibleLen(s string) int {
 	return runewidth.StringWidth(stripAnsi(s))
 }
 
+// truncateToWidth truncates a string (which may contain ANSI codes) to fit within maxWidth visible characters.
+func truncateToWidth(s string, maxWidth int) string {
+	if maxWidth <= 0 {
+		return ""
+	}
+	var b strings.Builder
+	inEsc := false
+	w := 0
+	for _, r := range s {
+		if r == '\x1b' {
+			inEsc = true
+			b.WriteRune(r)
+			continue
+		}
+		if inEsc {
+			b.WriteRune(r)
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+				inEsc = false
+			}
+			continue
+		}
+		rw := runewidth.RuneWidth(r)
+		if w+rw > maxWidth {
+			break
+		}
+		b.WriteRune(r)
+		w += rw
+	}
+	return b.String()
+}
+
 func stripAnsi(s string) string {
 	var b strings.Builder
 	inEsc := false

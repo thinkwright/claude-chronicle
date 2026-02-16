@@ -363,7 +363,9 @@ func (d *DetailPane) renderLines() {
 			}
 			tag := SystemMsgStyle.Render("  ┃ ◌ SYSTEM")
 			d.lines = append(d.lines, tag)
-			d.lines = append(d.lines, SystemMsgStyle.Render("  ┃ "+msg.Text))
+			for _, line := range wrapText(msg.Text, contentWidth-4) {
+				d.lines = append(d.lines, SystemMsgStyle.Render("  ┃ "+line))
+			}
 			d.lines = append(d.lines, "")
 		}
 	}
@@ -453,6 +455,10 @@ func (d *DetailPane) View() string {
 		sb := " "
 		if idx < len(scrollbar) {
 			sb = scrollbar[idx]
+		}
+		// Truncate content that overflows the panel width
+		if visibleLen(content) > innerW {
+			content = truncateToWidth(content, innerW)
 		}
 		// Right-align scrollbar char at the gutter edge
 		pad := innerW - visibleLen(content)
